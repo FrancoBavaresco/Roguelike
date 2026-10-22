@@ -973,7 +973,7 @@ R.makeKnight = function (accent) {
   const hideWithChest = [];
   body.traverse(o => { if (!o.isMesh) return; const wp = o.parent === body || o.parent === look ? o.position.y : 9; if ((o.material === tunic && (o.parent !== body && o.parent !== look ? true : wp > 1.0)) || (wp > 1.55 && wp < 1.65 && o.geometry && o.geometry.type === 'TorusGeometry')) hideWithChest.push(o); });
   const m = { kind: 'knight', hideWithChest, look, rig: { torsoR: 0.31, shoulderX: 0.36, shoulderY: 1.52, waistY: 0.98 }, hideWithHelm: head.children.slice(1), capeMat, cloakBase: 0x2c2826, root, body, cloak, cloakGeo, base, aL: null, aR: null, auraCol: accent, mantle, hood: null, head, legs, arms, strap: null, brooch, bGlow: null, hL, hR, gL, gR, book, sig, light, ward, bastion, mirror, accent, eyes, cloth: tunic, castT: 0, castSide: 1, t: Math.random() * 10, walk: 0, lvx: 0, lvz: 0 };
-  if (H.models && H.models.has('knight')) { const inst = H.models.instance('knight'); if (inst) { body.traverse(o => { if (o.isMesh && o !== hL && o !== hR) o.visible = false; }); body.add(inst.obj); m.glb = inst; m.anim = inst.anim; } }
+  if (H.models && H.models.has('knight')) { const inst = H.models.acquire('knight'); if (inst) { body.traverse(o => { if (o.isMesh && o !== hL && o !== hR) o.visible = false; }); body.add(inst.obj); m.glb = inst; m.glbInst = inst; m.anim = inst.anim; } }
   return m;
 };
 /* Character catalogue (looks only; every hero shares the same stats, controls and combat). */
@@ -1184,7 +1184,13 @@ R.readHeroAnim = function (m, p) {
 // how long a dead enemy should stay for its death clip (procedural models: 0)
 R.enemyDeathHold = function (m) { if (m && m.anim && m.anim.actions.death) { if (m.mark) m.mark.visible = false; return 0.9; } return 0; };
 // what the corpse looks like right after dying: hidden, or kept for the fall into a pit
-R.enemyDeathVisual = function (m, plunge) { if (m && m.root) m.root.visible = !!plunge; };
+R.enemyDeathVisual = function (m, plunge) { if (m && m.root) m.root.visible = !!plunge || !!(m.anim && m.anim.actions.death); };
+// height of the health bar above an enemy's feet: from the model registry for a .glb, else per procedural type
+R.enemyBarHeight = function (e) {
+  const g = e.model && e.model.glbInst && e.model.glbInst.barH;
+  const h = g || (e.type === 'brute' ? 3.4 : e.type === 'shieldbearer' ? 2.6 : 2.4);
+  return h * (e.elite ? 1.3 : 1);
+};
 R.animateDying = function (m, e, dt) { if (m && m.anim) R.animateEnemy(m, e, dt); };
 // spirits turning ethereal: see-through copies of the model's own materials
 R.setGhost = function (m, on) {
@@ -1335,7 +1341,7 @@ R.animateRogue = function (m, p, dt) {
   m.cloth.emissive && m.cloth.emissive.setHex(hurt ? 0x661020 : 0x000000);
   m.root.visible = !(p.invulnBlink > 0 && Math.floor(m.t * 20) % 2 === 0);
   m.light.intensity = 1.0 + ct * 2;
-  if (m.anim && H.models) { const clip = p.dead || p.downed ? 'death' : p.hurtT > 0 ? 'hurt' : p.dashT > 0 ? 'dash' : ct > 0.3 ? 'cast' : moving ? 'run' : 'idle'; H.models.play(m.anim, clip); m.anim.mixer.update(dt); }
+  if (m.anim && H.models) { const sw = m.swingT > 0 && m.swing && m.anim.actions[m.swing] ? m.swing : null; const clip = p.dead || p.downed ? 'death' : p.hurtT > 0 ? 'hurt' : p.dashT > 0 ? 'dash' : sw || (ct > 0.3 ? 'cast' : moving ? 'run' : 'idle'); H.models.play(m.anim, clip); m.anim.mixer.update(dt); }
 };
 R.setRogueElement = function (m, el) {
   const c = H.EL[el] ? H.EL[el].color : m.accent;
@@ -1352,7 +1358,11 @@ R.makeEnemy = function (type, elite) {
   const flesh = R.std(def.color, { roughness: 0.8 }); const dark = R.std(0x15111a); const mats = [flesh, dark];
   const eye = R.basic(0xff2e55); const parts = {};
   const S = elite ? 1.3 : 1;
-  if (type === 'husk') {
+  const glbInst = H.models && H.models.acquire ? H.models.acquire(type) : null;
+  if (glbInst) {
+    // external .glb (public/models/), animated with an AnimationMixer; returned to the pool on release
+    body.add(glbInst.obj); parts.glb = glbInst.obj; parts.anim = glbInst.anim; glbInst.mats.forEach(mm => mats.push(mm));
+  } else if (type === 'husk') {
     const torso = part(new THREE.BoxGeometry(0.75, 0.9, 0.55), flesh, 0, 1.0, 0.05, body); torso.rotation.x = -0.45;
     part(new THREE.SphereGeometry(0.26, 7, 5), flesh, 0, 1.45, -0.32, body);
     part(new THREE.BoxGeometry(0.28, 0.06, 0.05), eye, 0, 1.47, -0.56, body);
@@ -1402,9 +1412,6 @@ R.makeEnemy = function (type, elite) {
     part(new THREE.SphereGeometry(0.45, 7, 6), R.std(0xb39a60), 0, 1.3, 0, body);
     part(new THREE.BoxGeometry(1.2, 0.12, 0.12), R.std(0x4a3524), 0, 1.25, 0, body);
     if (type === 'turret') { part(new THREE.CylinderGeometry(0.3, 0.2, 0.3, 6), R.std(0x3a2a20), 0, 1.85, 0, body); const g = R.glowSprite(0xff2e55, 0.9); g.position.y = 2.0; body.add(g); }
-  } else if (type === 'bone_stalker' && H.models && H.models.has(type)) {
-    // external .glb model (public/models/enemies/), animated with an AnimationMixer
-    const inst = H.models.instance(type); body.add(inst.obj); parts.glb = inst.obj; parts.anim = inst.anim; inst.mats.forEach(mm => mats.push(mm));
   } else if (type === 'bone_stalker') {
     // prototype: a low, four-legged skeleton hound — skull, spine, ribcage, bone legs and a tail
     const bone = R.std(0xd9cfb8, { roughness: 0.7, flatShading: false }), boneD = R.std(0xa89c84, { roughness: 0.8, flatShading: false }); mats.push(bone, boneD);
@@ -1447,7 +1454,7 @@ R.makeEnemy = function (type, elite) {
   const ice = new THREE.Mesh(new THREE.IcosahedronGeometry(def.r * S * 1.5, 0), new THREE.MeshStandardMaterial({ color: 0xbff6ff, emissive: 0x3aa8d8, emissiveIntensity: 0.5, transparent: true, opacity: 0.55, flatShading: true })); ice.position.y = def.r * S * 1.2; ice.visible = false; root.add(ice);
   for (const mm of mats) mm.userData.em = mm.emissive ? mm.emissive.getHex() : 0;
   R.ents.add(root);
-  return { root, body, parts, mats, mark, ice, anim: parts.anim || null, t: Math.random() * 10, flashT: 0, type };
+  return { root, body, parts, mats, mark, ice, anim: parts.anim || null, glbInst, t: Math.random() * 10, flashT: 0, type };
 };
 R.makeBoss = function (type) {
   const THREE = T3();
@@ -1510,7 +1517,18 @@ R.animateEnemy = function (m, e, dt) {
   const moving = Math.hypot(e.vx, e.vz) > 0.4 && !e.stunT && !e.frozenT;
   const P = m.parts; const wind = e.windupK || 0;
   const typ = m.type;
-  if (typ === 'husk' || typ === 'brute') {
+  if (m.anim) {
+    // .glb: pick a clip from the AI state (windup from the telegraph, attack/hit as one-shots), then advance the mixer
+    if (e.animEvt) { m.oneShot = e.animEvt; m.oneShotT = e.animEvt === 'attack' ? 0.6 : 99; e.animEvt = null; }
+    if (m.flashT > 0.06 && !e.dead && !m.oneShot) { m.oneShot = 'hit'; m.oneShotT = 0.3; }
+    // types without explicit events: the AI state drives it (windup while telegraphing, attack as it ends)
+    const st = e.ai ? e.ai.state : null;
+    if (m._aiSt === 'windup' && st !== 'windup' && !e.dead && !m.oneShot) { m.oneShot = 'attack'; m.oneShotT = 0.6; }
+    m._aiSt = st;
+    if (m.oneShot) { m.oneShotT -= dt; if (m.oneShotT <= 0 || (m.oneShot === 'windup' && st !== 'windup')) m.oneShot = null; }
+    const clip = e.dead ? 'death' : m.oneShot || (st === 'windup' ? 'windup' : moving ? 'run' : 'idle');
+    H.models.play(m.anim, clip); m.anim.mixer.update(dt);
+  } else if (typ === 'husk' || typ === 'brute') {
     const sw = moving ? Math.sin(t * 9) * 0.4 : 0;
     if (P.aL) { P.aL.rotation.x = sw - wind * 1.4; P.aR.rotation.x = -sw - wind * 1.4; }
     m.body.position.y = moving ? Math.abs(Math.sin(t * 9)) * 0.08 : 0;
@@ -1521,14 +1539,6 @@ R.animateEnemy = function (m, e, dt) {
   else if (typ === 'shieldbearer') { P.shield.position.z = -0.6 - wind * 0.5; m.body.position.y = moving ? Math.abs(Math.sin(t * 7)) * 0.05 : 0; P.shield.rotation.x = (e.shieldDown ? 0.9 : 0); }
   else if (typ === 'summoner') { m.body.position.y = 0.3 + Math.sin(t * 2) * 0.15; P.candles.forEach((c, i) => { const a = t * (1 + wind * 3) + i * 2.09; c.position.set(Math.cos(a) * 1.0, 1.6 + Math.sin(t * 3 + i) * 0.2, Math.sin(a) * 1.0); }); }
   else if (typ === 'regent_echo') { m.body.position.y = 0.3 + Math.sin(t * 2) * 0.2; }
-  else if (typ === 'bone_stalker' && m.anim) {
-    // .glb: pick a clip from the AI state, then advance the mixer
-    if (e.animEvt) { m.oneShot = e.animEvt; m.oneShotT = e.animEvt === 'attack' ? 0.6 : 99; e.animEvt = null; }
-    if (m.flashT > 0.06 && !e.dead && !m.oneShot) { m.oneShot = 'hit'; m.oneShotT = 0.3; }
-    if (m.oneShot) { m.oneShotT -= dt; if (m.oneShotT <= 0 || (m.oneShot === 'windup' && !(e.ai && e.ai.state === 'windup'))) m.oneShot = null; }
-    const clip = e.dead ? 'death' : m.oneShot || (moving ? 'run' : 'idle');
-    H.models.play(m.anim, clip); m.anim.mixer.update(dt);
-  }
   else if (typ === 'bone_stalker') {
     // prototype: trotting gait, crouch while winding up, a short leap squash after the pounce
     if (e.animEvt === 'attack') { m.leapT = 0.35; e.animEvt = null; } else if (e.animEvt) e.animEvt = null;

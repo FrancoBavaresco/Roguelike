@@ -97,7 +97,7 @@ UI.menuScene = function () {
   UI.showcase = { m, p: { x: 0, z: -0.4, vx: 0, vz: 0, faceAng: Math.PI, iframes: 0, dashT: 0, bastionT: 0, mirrorT: 0, hurtT: 0, invulnBlink: 0 }, t: 0 };
   H.R.follow.x = 0; H.R.follow.z = 0; H.R.follow.zoom = 0.62; H.R.updateCamera(0, true);
 };
-UI.clearShowcase = function () { if (UI.showcase) { H.R.removeMesh(UI.showcase.m.root); UI.showcase = null; } };
+UI.clearShowcase = function () { if (UI.showcase) { H.views.release({ model: UI.showcase.m }); UI.showcase = null; } };
 UI.updateShowcase = function (dt) {
   const s = UI.showcase; if (!s) return; s.t += dt;
   H.R.animateRogue(s.m, s.p, dt);
@@ -940,8 +940,7 @@ UI.updateWorld = function (dt) {
     seen.add(e.uid);
     let b = W.bars.get(e.uid);
     if (!b) { const el = document.createElement('div'); el.className = 'eb' + (e.elite ? ' elite' : ''); el.innerHTML = `${e.elite ? `<div class="en">${esc(H.t('{a} {n}', { a: H.ELITE_AFFIXES[e.elite].name, n: e.def.name }))}</div>` : ''}<div class="hp"><i></i></div><div class="st"></div><div class="chw" hidden><div class="chl">interrupt</div><div class="ch"><i></i></div></div>`; $('#world-ui').appendChild(el); b = { el, hp: el.querySelector('.hp i'), st: el.querySelector('.st'), chw: el.querySelector('.chw'), ch: el.querySelector('.ch i') }; W.bars.set(e.uid, b); }
-    const h = e.type === 'brute' ? 3.4 : e.type === 'shieldbearer' ? 2.6 : 2.4;
-    const sp = R.toScreen(e.x, h * (e.elite ? 1.3 : 1), e.z);
+    const sp = R.toScreen(e.x, R.enemyBarHeight(e), e.z);
     b.el.style.display = sp.vis ? '' : 'none';
     b.el.style.transform = `translate(${sp.x.toFixed(1)}px, ${sp.y.toFixed(1)}px) translate(-50%,-100%)`;
     setW(b.hp, e.hp / e.maxHp);

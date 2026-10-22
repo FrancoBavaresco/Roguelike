@@ -3,8 +3,8 @@
    create(entity) builds the model when a hero or enemy appears, release(entity) frees it, and
    sync(dt) poses every model once per rendered frame from the entity's state (position, ai state,
    p.anim, timers). The simulation never animates models; it runs at a fixed 1/60 s and the view
-   follows at the screen's own rate. Today every model is procedural (render.js); stage 5 adds
-   the choice between a .glb and the procedural fallback here. */
+   follows at the screen's own rate. A type with a ready .glb in the model registry (models.js) gets a
+   pooled instance inside its model; any other type keeps its procedural model from render.js. */
 const V = H.views = {};
 
 /* Build the model for a hero or an enemy. Called at spawn time (inside the simulation step) so the
@@ -19,6 +19,8 @@ V.create = function (ent, o = {}) {
 /* Free the model of an entity leaving the game (dead enemy removed, room or run cleared). */
 V.release = function (ent) {
   if (!ent || !ent.model) return;
+  // a pooled .glb goes back to the registry before the rest of the model is disposed
+  if (ent.model.glbInst && H.models) { H.models.release(ent.model.glbInst); ent.model.glbInst = null; }
   H.R.removeMesh(ent.model.root);
   if (ent._carrow) { H.R.removeMesh(ent._carrow); ent._carrow = null; }
 };
