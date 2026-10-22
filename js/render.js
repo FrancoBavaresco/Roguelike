@@ -1,6 +1,9 @@
 'use strict';
 /* HEXWRIGHT — renderer: scene, chambers, models, telegraphs, particles, camera */
 const R = H.R = { ready: false, t: 0 };
+/* Cosmetic randomness for animation (sparks, wobble) has its own generator, so how often the view
+   animates can never change the game's random outcomes (drops, AI choices, revives...). */
+R.vrand = (() => { let s = 0x9e3779b9; return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; })();
 const T3 = () => window.THREE;
 
 R.init = function (canvas) {
@@ -1225,7 +1228,7 @@ R.animateRogue = function (m, p, dt) {
     m.aL.material.rotation += dt * 2; m.aR.material.rotation -= dt * 2;
     if (!_q.w) _q.w = new THREE.Vector3();
     for (const hd of [m.hL, m.hR]) {
-      if (Math.random() < dt * (14 + ct * 40) && m.root.visible) { hd.getWorldPosition(_q.w); R.emit(_q.w.x + (Math.random() - .5) * 0.12, _q.w.y, _q.w.z + (Math.random() - .5) * 0.12, (Math.random() - .5) * 0.6, 0.6 + Math.random() * 0.8, (Math.random() - .5) * 0.6, 0.45 + Math.random() * 0.3, 0.18, 0.02, m.auraCol, 0.9, -0.5, 1.5); }
+      if (R.vrand() < dt * (14 + ct * 40) && m.root.visible) { hd.getWorldPosition(_q.w); R.emit(_q.w.x + (R.vrand() - .5) * 0.12, _q.w.y, _q.w.z + (R.vrand() - .5) * 0.12, (R.vrand() - .5) * 0.6, 0.6 + R.vrand() * 0.8, (R.vrand() - .5) * 0.6, 0.45 + R.vrand() * 0.3, 0.18, 0.02, m.auraCol, 0.9, -0.5, 1.5); }
     }
   }
   // arms reach toward the hands
@@ -1433,7 +1436,7 @@ R.animateEnemy = function (m, e, dt) {
     m.body.position.y = moving ? Math.abs(Math.sin(t * 9)) * 0.08 : 0;
     m.body.rotation.x = wind * -0.3;
   } else if (typ === 'spitter') { const s = 1 + Math.sin(t * 4) * 0.04 + wind * 0.25; P.sac.scale.set(s, 1 + (s - 1) * 1.4, s); P.mouth.scale.setScalar(0.9 + wind * 1.6); }
-  else if (typ === 'wisp') { P.core.rotation.y += dt * 4; P.shell.rotation.x += dt * 2; P.shell.rotation.y -= dt * 3; const s = 1 + wind * 0.8 + Math.sin(t * 30) * wind * 0.2; P.shell.scale.setScalar(s); P.glow.scale.setScalar(1.8 + wind * 2); m.body.position.y = Math.sin(t * 3) * 0.15; if (Math.random() < dt * 20) R.emit(e.x, 1.1, e.z, 0, 0.3, 0, 0.4, 0.3, 0, 0xff2e55, 0.8, -1, 1); }
+  else if (typ === 'wisp') { P.core.rotation.y += dt * 4; P.shell.rotation.x += dt * 2; P.shell.rotation.y -= dt * 3; const s = 1 + wind * 0.8 + Math.sin(t * 30) * wind * 0.2; P.shell.scale.setScalar(s); P.glow.scale.setScalar(1.8 + wind * 2); m.body.position.y = Math.sin(t * 3) * 0.15; if (R.vrand() < dt * 20) R.emit(e.x, 1.1, e.z, 0, 0.3, 0, 0.4, 0.3, 0, 0xff2e55, 0.8, -1, 1); }
   else if (typ === 'hexcaster') { P.halo.rotation.z += dt * (1 + wind * 8); P.halo.scale.setScalar(1 + wind * 0.6); m.body.position.y = 0.1 + Math.sin(t * 2) * 0.08; P.hL.position.y = 1.2 + wind * 0.8; P.hR.position.y = 1.2 + wind * 0.8; }
   else if (typ === 'shieldbearer') { P.shield.position.z = -0.6 - wind * 0.5; m.body.position.y = moving ? Math.abs(Math.sin(t * 7)) * 0.05 : 0; P.shield.rotation.x = (e.shieldDown ? 0.9 : 0); }
   else if (typ === 'summoner') { m.body.position.y = 0.3 + Math.sin(t * 2) * 0.15; P.candles.forEach((c, i) => { const a = t * (1 + wind * 3) + i * 2.09; c.position.set(Math.cos(a) * 1.0, 1.6 + Math.sin(t * 3 + i) * 0.2, Math.sin(a) * 1.0); }); }
@@ -1469,7 +1472,7 @@ R.animateEnemy = function (m, e, dt) {
   m.ice.visible = e.frozenT > 0;
   // spawn-in scale
   const sp = e.spawnK != null ? e.spawnK : 1; m.root.scale.setScalar(0.2 + 0.8 * sp);
-  if (e.stunT > 0 && Math.random() < dt * 6) R.emit(e.x + (Math.random() - .5), 2.2 * (m.boss ? 2 : 1), e.z + (Math.random() - .5), 0, 0.5, 0, 0.5, 0.25, 0, 0xffe45c, 1, 0, 1);
+  if (e.stunT > 0 && R.vrand() < dt * 6) R.emit(e.x + (R.vrand() - .5), 2.2 * (m.boss ? 2 : 1), e.z + (R.vrand() - .5), 0, 0.5, 0, 0.5, 0.25, 0, 0xffe45c, 1, 0, 1);
 };
 R.flashEnemy = function (m) { m.flashT = 0.07; for (const mm of m.mats) if (mm.emissive) mm.emissive.setHex(0xffffff); };
 
