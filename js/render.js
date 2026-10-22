@@ -16,8 +16,10 @@ R.init = function (canvas) {
   const scene = R.scene = new THREE.Scene();
   scene.background = new THREE.Color(0x120e19);
   scene.fog = new THREE.Fog(0x120e19, 24, 58);
-  const cam = R.camera = new THREE.PerspectiveCamera(42, 1, 0.5, 200);
+  const cam = R.persCam = R.camera = new THREE.PerspectiveCamera(42, 1, 0.5, 200);
   cam.position.set(0, 20, 14); cam.lookAt(0, 0, 0);
+  // fixed isometric view (Hades-like): orthographic, 45° yaw, looking down at ISO.pitch
+  R.orthoCam = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.5, 220);
   R.hemi = new THREE.HemisphereLight(0xb7a8ff, 0x0a0810, 0.3); scene.add(R.hemi);
   const key = R.key = new THREE.DirectionalLight(0xffd9b0, 0.6); key.position.set(-8, 18, 6);
   key.shadow.mapSize.set(1024, 1024); const sc = key.shadow.camera; sc.left = -20; sc.right = 20; sc.top = 20; sc.bottom = -20; sc.near = 1; sc.far = 50; key.shadow.bias = -0.0015;
@@ -39,7 +41,7 @@ R.init = function (canvas) {
   R.shakeT = 0; R.kick = { x: 0, z: 0 }; R.camPos = new THREE.Vector3(0, 20, 14); R.camLook = new THREE.Vector3();
   R.follow = { x: 0, z: 0, zoom: 1 };
   R.raycaster = new THREE.Raycaster(); R.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  R.applyQuality(); R.resize();
+  R.applyQuality(); R.setCameraMode(H.settings.camera || 'iso'); R.resize();
   window.addEventListener('resize', R.resize);
   R.ready = true;
 };
@@ -55,9 +57,11 @@ R.applyQuality = function () {
 R.resize = function () {
   const w = window.innerWidth, h = window.innerHeight;
   R.renderer.setSize(w, h, false);
-  R.camera.aspect = w / h; R.camera.updateProjectionMatrix();
+  R.persCam.aspect = w / h; R.persCam.updateProjectionMatrix();
   R.vw = w; R.vh = h;
-  if (R.pMat) R.pMat.uniforms.uScale.value = R.renderer.getDrawingBufferSize(new (T3().Vector2)()).y / (2 * Math.tan(R.camera.fov * Math.PI / 360));
+  R.bufH = R.renderer.getDrawingBufferSize(new (T3().Vector2)()).y;
+  // particle size: perspective divides by depth; orthographic uses pixels per world unit (set in updateCamera)
+  if (R.pMat && R.camMode !== 'iso') R.pMat.uniforms.uScale.value = R.bufH / (2 * Math.tan(R.persCam.fov * Math.PI / 360));
 };
 
 /* ---------------- Textures ---------------- */
@@ -101,8 +105,8 @@ R.initParticles = function () {
   g.setAttribute('pcolor', new THREE.BufferAttribute(R.pCol, 4).setUsage(THREE.DynamicDrawUsage));
   g.setAttribute('size', new THREE.BufferAttribute(R.pSize, 1).setUsage(THREE.DynamicDrawUsage));
   R.pMat = new THREE.ShaderMaterial({
-    uniforms: { uScale: { value: 800 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    vertexShader: 'attribute float size; attribute vec4 pcolor; varying vec4 vC; uniform float uScale; void main(){ vC=pcolor; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=max(1.0,size*uScale/-mv.z); gl_Position=projectionMatrix*mv; }',
+    uniforms: { uScale: { value: 800 }, uOrtho: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: 'attribute float size; attribute vec4 pcolor; varying vec4 vC; uniform float uScale; uniform float uOrtho; void main(){ vC=pcolor; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=max(1.0,size*uScale/mix(-mv.z,1.0,uOrtho)); gl_Position=projectionMatrix*mv; }',
     fragmentShader: 'varying vec4 vC; void main(){ vec2 c=gl_PointCoord-0.5; float d=length(c)*2.0; if(d>1.0) discard; float core=1.0-smoothstep(0.0,0.45,d); float a=(1.0-d)*(1.0-d); gl_FragColor=vec4(vC.rgb+core*0.55, vC.a*a); }'
   });
   R.points = new THREE.Points(g, R.pMat); R.points.frustumCulled = false; R.scene.add(R.points);
@@ -400,9 +404,10 @@ R.buildChamber = function (room, theme) {
   // walls
   const wallMat = R.wallMaterial(new THREE.Color(0xffffff).lerp(new THREE.Color(theme.light), 0.1).multiplyScalar(0.5));
   const runeMat = R.basic(theme.rune);
-  const addBlock = (x, z, w, h, d, low) => {
+  const addBlock = (x, z, w, h, d, low, east) => {
     const m = new THREE.Mesh(R.boxUV(w, h, d, 0.5), wallMat); m.position.set(x, h / 2 - 0.3, z); m.castShadow = !low; m.receiveShadow = true; R.chamber.add(m);
-    if (!low && Math.random() < 0.35) { const s = new THREE.Mesh(new THREE.BoxGeometry(w * 0.6, 0.08, d * 1.02), runeMat); s.position.set(x, h * (0.3 + Math.random() * 0.5), z); R.chamber.add(s); }
+    if (east) { m.userData.eastWall = true; m.userData.h = h; }
+    if (!low && Math.random() < 0.35) { const s = new THREE.Mesh(new THREE.BoxGeometry(w * 0.6, 0.08, d * 1.02), runeMat); s.position.set(x, h * (0.3 + Math.random() * 0.5), z); R.chamber.add(s); if (east) { s.userData.eastWall = true; s.userData.rune = true; } }
   };
   const doorXs = room.doors.map(d => d.x);
   for (let x = b.minX - 1; x <= b.maxX + 1; x += 2) {
@@ -411,7 +416,7 @@ R.buildChamber = function (room, theme) {
     else addBlock(x, b.minZ - 1.6, 2, 0.5, 0.8, true);
     addBlock(x, b.maxZ + 1, 2, 0.5, 2, true);
   }
-  for (let z = b.minZ - 1; z <= b.maxZ + 1; z += 2) { addBlock(b.minX - 1, z, 2, 2.4 + Math.random() * 2 * (1 - (z - b.minZ) / D), 2); addBlock(b.maxX + 1, z, 2, 2.4 + Math.random() * 2 * (1 - (z - b.minZ) / D), 2); }
+  for (let z = b.minZ - 1; z <= b.maxZ + 1; z += 2) { addBlock(b.minX - 1, z, 2, 2.4 + Math.random() * 2 * (1 - (z - b.minZ) / D), 2); addBlock(b.maxX + 1, z, 2, 2.4 + Math.random() * 2 * (1 - (z - b.minZ) / D), 2, false, true); }
   // pillars: stacks of big, solid stone blocks
   if (!R.blockTex) {
     const N = 256; const cv = document.createElement('canvas'); cv.width = cv.height = N; const c = cv.getContext('2d');
@@ -442,7 +447,7 @@ R.buildChamber = function (room, theme) {
     // faint rune seam between two blocks
     const band = new THREE.Mesh(new THREE.BoxGeometry(w * 1.0, 0.06, w * 1.0), runeMat); band.position.y = 0.15 + bh * (1 + (Math.random() < .5 ? 1 : 0)) - 0.025; band.scale.set(1.01, 1, 1.01); g.add(band);
     g.rotation.y = Math.random() * Math.PI / 2;
-    g.position.set(p.x, 0, p.z); R.chamber.add(g);
+    g.position.set(p.x, 0, p.z); R.chamber.add(g); g.userData = { pillar: true, x: p.x, z: p.z, r: p.r, h, fade: 1 };
   }
   // pits
   for (const p of room.pits) {
@@ -475,6 +480,7 @@ R.buildChamber = function (room, theme) {
   if (room.prop) R.buildProp(room.prop, theme);
   // key light/shadow fits room
   R.key.position.set(b.minX + W * 0.3, 18, b.minZ + D * 0.7); R.key.target.position.set((b.minX + b.maxX) / 2, 0, (b.minZ + b.maxZ) / 2);
+  R.applyWallCut();
 };
 R.makeWoodTexture = function () {
   const W = 256, Hh = 512; const cv = document.createElement('canvas'); cv.width = W; cv.height = Hh; const c = cv.getContext('2d');
@@ -1533,8 +1539,30 @@ R.makeZoneMesh = function (color, r, opacity = 0.35) {
 /* ---------------- Camera & projection ---------------- */
 R.shake = function (amt) { R.shakeT = Math.min(1, R.shakeT + amt * H.settings.shake); };
 R.kickCam = function (dx, dz, amt) { R.kick.x += dx * amt * H.settings.shake; R.kick.z += dz * amt * H.settings.shake; };
+/* Camera modes: 'classic' (perspective, from the south) and 'iso' (orthographic isometric). The game only
+   ever talks to the camera through follow/zoom, toScreen and screenToGround, so both modes work everywhere. */
+R.ISO = { yaw: Math.PI / 4, pitch: 40 * Math.PI / 180, dist: 40, halfH: 9.4 };
+R.setCameraMode = function (mode) {
+  R.camMode = mode === 'classic' ? 'classic' : 'iso';
+  R.camera = R.camMode === 'iso' ? R.orthoCam : R.persCam;
+  R.camYaw = R.camMode === 'iso' ? R.ISO.yaw : 0; // movement input is rotated by this so "up" stays up on screen
+  if (R.pMat) R.pMat.uniforms.uOrtho.value = R.camMode === 'iso' ? 1 : 0;
+  if (R.scene.fog) { if (R.camMode === 'iso') { R.scene.fog.near = R.ISO.dist + 6; R.scene.fog.far = R.ISO.dist + 48; } else { R.scene.fog.near = 24; R.scene.fog.far = 58; } }
+  R.applyWallCut();
+  if (R.vw) { R.resize(); R.updateCamera(0, true); }
+};
+/* In the isometric view the near-right (east) wall would hide the room: lower it to a ledge like the south wall. */
+R.applyWallCut = function () {
+  const iso = R.camMode === 'iso';
+  for (const m of R.chamber ? R.chamber.children : []) {
+    const u = m.userData; if (!u.eastWall) continue;
+    if (u.rune) { m.visible = !iso; continue; }
+    m.scale.y = iso ? 0.5 / u.h : 1; m.position.y = iso ? 0.25 - 0.3 : u.h / 2 - 0.3;
+  }
+};
 R.updateCamera = function (dt, snap) {
   const f = R.follow; const cam = R.camera;
+  if (R.camMode === 'iso') return R.updateIsoCamera(dt, snap);
   const aspect = R.vw / R.vh;
   const zoom = f.zoom * (aspect < 1.3 ? 1.25 : aspect > 2 ? 0.95 : 1) * (R.mobileZoom || 1);
   const target = new (T3().Vector3)(f.x, 0, f.z);
@@ -1547,6 +1575,48 @@ R.updateCamera = function (dt, snap) {
   const ox = (Math.sin(tt * 1.3) + Math.sin(tt * 2.9) * 0.5) * s, oy = (Math.sin(tt * 1.7 + 1) * 0.5) * s, oz = (Math.sin(tt * 2.1 + 2) + Math.sin(tt * 3.7) * 0.4) * s;
   cam.position.set(R.camPos.x + ox + R.kick.x, R.camPos.y + oy, R.camPos.z + oz + R.kick.z);
   cam.lookAt(R.camLook.x + ox * 0.5 + R.kick.x, 0, R.camLook.z - 1 + R.kick.z);
+};
+/* Isometric view: a pillar standing between the camera and a hero or enemy fades so nobody is hidden behind it. */
+R.updateOcclusion = function (dt) {
+  const G = H.G; if (!R.chamber) return;
+  const iso = R.camMode === 'iso' && G && G.active;
+  const fx = -Math.sin(R.ISO.yaw), fz = -Math.cos(R.ISO.yaw), reach = 1 / Math.tan(R.ISO.pitch);
+  for (const g of R.chamber.children) {
+    const u = g.userData; if (!u.pillar) continue;
+    let hide = false;
+    if (iso) {
+      const ents = G.players.filter(p => !p.dead).concat(G.enemies.filter(e => !e.dead));
+      for (const e of ents) {
+        const dx = e.x - u.x, dz = e.z - u.z, depth = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
+        if (depth > 0 && depth < u.h * reach + 0.6 && side < u.r * 1.3 + (e.r || 0.5)) { hide = true; break; }
+      }
+    }
+    const target = hide ? 0.3 : 1; if (u.fade === target && !u.fading) continue;
+    u.fade += (target - u.fade) * (1 - Math.exp(-dt * 10)); if (Math.abs(u.fade - target) < 0.01) u.fade = target;
+    if (!u.mats) { u.mats = []; g.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); u.mats.push(o.material); } }); }
+    for (const m of u.mats) { m.transparent = u.fade < 0.999; m.opacity = u.fade; m.depthWrite = u.fade >= 0.999; }
+    u.fading = u.fade !== target;
+  }
+};
+R.updateIsoCamera = function (dt, snap) {
+  const f = R.follow, cam = R.orthoCam, I = R.ISO;
+  const aspect = R.vw / R.vh;
+  const zoom = f.zoom * (aspect < 1.3 ? 1.25 : aspect > 2 ? 0.95 : 1) * (R.mobileZoom || 1);
+  const k = snap ? 1 : 1 - Math.exp(-dt * 6);
+  // camLook follows the action; camPos.y carries the view height so zoom changes ease in like before
+  R.camLook.x += (f.x - R.camLook.x) * k; R.camLook.z += (f.z - R.camLook.z) * k;
+  R.camPos.y += (I.halfH * zoom - R.camPos.y) * k; if (snap || !(R.camPos.y > 0)) R.camPos.y = I.halfH * zoom;
+  const halfH = R.camPos.y, halfW = halfH * aspect;
+  if (cam.top !== halfH || cam.right !== halfW) { cam.left = -halfW; cam.right = halfW; cam.top = halfH; cam.bottom = -halfH; cam.updateProjectionMatrix(); }
+  if (R.pMat) R.pMat.uniforms.uScale.value = (R.bufH || R.vh) / (2 * halfH);
+  R.kick.x *= Math.exp(-dt * 12); R.kick.z *= Math.exp(-dt * 12);
+  R.shakeT = Math.max(0, R.shakeT - dt * 1.6);
+  const s = R.shakeT * R.shakeT * 0.9; const tt = R.t * 40;
+  const ox = (Math.sin(tt * 1.3) + Math.sin(tt * 2.9) * 0.5) * s, oz = (Math.sin(tt * 2.1 + 2) + Math.sin(tt * 3.7) * 0.4) * s;
+  const lx = R.camLook.x + ox * 0.5 + R.kick.x, lz = R.camLook.z + oz * 0.5 + R.kick.z;
+  const c = Math.cos(I.pitch);
+  cam.position.set(lx + Math.sin(I.yaw) * c * I.dist, Math.sin(I.pitch) * I.dist, lz + Math.cos(I.yaw) * c * I.dist);
+  cam.lookAt(lx, 0, lz);
 };
 R.screenToGround = function (sx, sy) {
   const THREE = T3();
@@ -1578,6 +1648,7 @@ R.update = function (dt, gameDt) {
   R.updateChamber(dt);
   R.updateAmbient(dt);
   R.updateCamera(dt);
+  R.updateOcclusion(dt);
   if (R.pMat) { /* keep uniform current */ }
   for (const m of R.fx.children) if (m.material && m.material.uniforms && m.material.uniforms.uTime) m.material.uniforms.uTime.value = R.t;
 };

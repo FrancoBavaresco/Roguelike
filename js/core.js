@@ -30,7 +30,7 @@ H.rng = function (seed) {
 const SAVE_KEY = 'hexwright.save.v1';
 H.defaultSettings = () => ({
   lang: null, master: 0.8, music: 0.55, sfx: 0.85,
-  quality: 'high', shake: 1, reduceFlash: false, dmgNumbers: true, hiTelegraph: false,
+  quality: 'high', camera: 'iso', shake: 1, reduceFlash: false, dmgNumbers: true, hiTelegraph: false,
   textScale: 1, gameSpeed: 1, aimAssist: 'medium', mouseAssist: false, autoRepeat: true,
   allyFx: 0.6, statusGlyphs: true, touchScale: 1, showFps: false, rumble: true, padAutoAim: true
 });
@@ -215,6 +215,11 @@ I.readPlayer = function (src) {
     for (const a of casts) { const b = t.btn[a]; if (!b) continue; out.held[a] = b.held; out.pressed[a] = b.pressed; out.released[a] = b.released; if (b.dragging && (b.ax || b.az)) { out.aimX = b.ax; out.aimZ = b.az; out.aimMode = 'dir'; out.touchAiming = a; } if (b.released && b.relAim) { out.aimX = b.relAim[0]; out.aimZ = b.relAim[1]; out.aimMode = 'dir'; } }
   }
   const ml = Math.hypot(out.mx, out.mz); if (ml > 1) { out.mx /= ml; out.mz /= ml; }
+  // with a rotated (isometric) camera, keys and sticks are screen-relative: turn them into world directions
+  const yaw = (H.R && H.R.camYaw) || 0;
+  if (yaw) { const c = Math.cos(-yaw), sn = Math.sin(-yaw); const rot = (x, z) => [x * c - z * sn, x * sn + z * c];
+    if (out.mx || out.mz) [out.mx, out.mz] = rot(out.mx, out.mz);
+    if (out.aimMode === 'dir') [out.aimX, out.aimZ] = rot(out.aimX, out.aimZ); }
   return out;
 };
 
