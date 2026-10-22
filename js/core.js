@@ -30,7 +30,7 @@ H.rng = function (seed) {
 const SAVE_KEY = 'hexwright.save.v1';
 H.defaultSettings = () => ({
   lang: null, master: 0.8, music: 0.55, sfx: 0.85,
-  quality: 'high', camera: 'iso', shake: 1, reduceFlash: false, dmgNumbers: true, hiTelegraph: false,
+  quality: 'high', camera: 'iso', look: 'toon', shake: 1, reduceFlash: false, dmgNumbers: true, hiTelegraph: false,
   textScale: 1, gameSpeed: 1, aimAssist: 'medium', mouseAssist: false, autoRepeat: true,
   allyFx: 0.6, statusGlyphs: true, touchScale: 1, showFps: false, rumble: true, padAutoAim: true
 });

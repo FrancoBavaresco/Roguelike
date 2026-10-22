@@ -37,6 +37,10 @@ R.init = function (canvas) {
   // pooled lights for impacts
   R.flashLights = [];
   for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffffff, 0, 8, 2); l.position.y = 1.2; scene.add(l); R.flashLights.push({ l, t: 0, dur: 1, i0: 0 }); }
+  // brazier lights come from a fixed pool: the number of lights never changes between rooms, so no shader recompiles
+  R.brazierLights = []; for (let i = 0; i < 2; i++) { const l = new THREE.PointLight(0xffffff, 0, 10, 2); l.position.y = 1.8; scene.add(l); R.brazierLights.push(l); }
+  // cool rim light from behind the isometric view: separates characters from the floor (painted look)
+  R.rim = new THREE.DirectionalLight(0x8fa8ff, 0.45); R.rim.position.set(-10, 9, -12); scene.add(R.rim);
   R.rings = []; R.bolts = []; R.decals = []; R.arcs = [];
   R.shakeT = 0; R.kick = { x: 0, z: 0 }; R.camPos = new THREE.Vector3(0, 20, 14); R.camLook = new THREE.Vector3();
   R.follow = { x: 0, z: 0, zoom: 1 };
@@ -304,6 +308,7 @@ R.glowSprite = function (color, size, tex) {
 R.clearChamber = function () {
   while (R.chamber.children.length) { const c = R.chamber.children[0]; R.removeMesh(c); }
   R.doorObjs = []; R.braziers = []; R.props = [];
+  for (const l of R.brazierLights || []) l.intensity = 0;
 };
 /* UV-scaled box so tiling textures keep their real-world size on every face */
 R.boxUV = function (w, h, d, s) {
@@ -471,7 +476,7 @@ R.buildChamber = function (room, theme) {
     const fl = R.glowSprite(theme.rune, 1.6); fl.position.y = 1.5; g.add(fl);
     g.position.set(p[0], 0, p[1]); R.chamber.add(g);
     let light = null;
-    if (i < 2 && H.settings.quality !== 'low') { light = new THREE.PointLight(theme.rune, 1.2, 10, 2); light.position.set(p[0], 1.8, p[1]); R.chamber.add(light); }
+    if (i < 2 && H.settings.quality !== 'low') { light = R.brazierLights[i]; light.color.setHex(theme.rune); light.intensity = 1.2; light.position.set(p[0], 1.8, p[1]); }
     R.braziers.push({ x: p[0], z: p[1], fl, light, ph: Math.random() * 7 });
   });
   // doors
@@ -480,6 +485,7 @@ R.buildChamber = function (room, theme) {
   if (room.prop) R.buildProp(room.prop, theme);
   // key light/shadow fits room
   R.key.position.set(b.minX + W * 0.3, 18, b.minZ + D * 0.7); R.key.target.position.set((b.minX + b.maxX) / 2, 0, (b.minZ + b.maxZ) / 2);
+  if (R.rim) R.rim.intensity = H.settings.look === 'classic' ? 0 : 0.45;
   R.applyWallCut();
 };
 R.makeWoodTexture = function () {
@@ -596,6 +602,7 @@ R.buildProp = function (prop, theme) {
     glowColor = 0xffd27a; prop.column = true;
   }
   const glow = R.glowSprite(glowColor, 4); glow.position.y = 1.4; glow.material.opacity = 0.5; g.add(glow);
+  R.toonify(g, prop, { outline: false });
   g.position.set(prop.x, 0, prop.z); R.chamber.add(g);
   prop.g = g; prop.glow = glow; prop.glowColor = glowColor; R.props.push(prop);
 };
@@ -1032,6 +1039,7 @@ R.dressRogue = function (m, equip) {
   if (m.capeMat) m.capeMat.color.copy(cc); if (m.mantle) m.mantle.material.color.copy(cc);
   if (m.cloak) m.cloak.visible = !!cloak; if (m.mantle) m.mantle.visible = !!cloak; if (m.brooch) m.brooch.visible = !!cloak;
   if (m.kind === 'knight' && m.mantle) m.mantle.visible = false;
+  for (const g of m.gearObjs) R.toonify(g);
   if (m.capeMat) { m.capeMat.emissive = new THREE.Color(cloak && cloak.id === 'ember_mantle' ? 0x4a1004 : 0x000000); }
 };
 /* Steel sword: blade along +Y of `inner`; `outer` sits in the right hand and carries the sweep. */
@@ -1074,10 +1082,10 @@ R.buildWeapon = function (wpn) {
 };
 R.makeSword = function (m, wpn) {
   const outer = R.buildWeapon(wpn);
-  m.hR.add(outer); (m.gearObjs = m.gearObjs || []).push(outer);
+  R.toonify(outer); m.hR.add(outer); (m.gearObjs = m.gearObjs || []).push(outer);
   return outer;
 };
-R.makeThrownWeapon = function (wpn) { const g = R.buildWeapon(wpn); R.fx.add(g); return g; };
+R.makeThrownWeapon = function (wpn) { const g = R.buildWeapon(wpn); R.toonify(g); R.fx.add(g); return g; };
 R.animateSword = function (m, p, dt) {
   const sw = m.sword; if (!sw) return; const inner = sw.userData.inner;
   const t = 1 - (m.swingT || 0), e = t * t * (3 - 2 * t), on = (m.swingT || 0) > 0;
@@ -1092,6 +1100,71 @@ R.animateSword = function (m, p, dt) {
   else if (on && m.swing === 'cleave') { const wind = t < 0.3 ? t / 0.3 : 1, cut = t < 0.3 ? 0 : Math.min(1, (t - 0.3) / 0.22), ce = cut * cut * (3 - 2 * cut); oy = -1.7 * wind + 2.9 * ce; ix = -0.5 * wind - 0.95 * ce - (1 - wind) * 0.75; }
   sw.rotation.set(ox, oy, 0); inner.rotation.x = ix;
 };
+/* ---- Illustrated look: 3-tone toon shading and ink outlines for characters, gear and props ---- */
+R.toonGradient = function () {
+  if (R._toonGrad) return R._toonGrad;
+  const THREE = T3(); // toon samples the ramp at dot(N,L)*0.5+0.5: faces turned away from a light get none of it (like Lambert),
+  // lit faces split into a mid tone and a full tone with a hard edge between them
+  const d = new Uint8Array([0, 0, 0, 255, 0, 0, 0, 255, 125, 125, 125, 255, 235, 235, 235, 255]);
+  const t = new THREE.DataTexture(d, 4, 1, THREE.RGBAFormat); t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;
+  return (R._toonGrad = t);
+};
+R._toonCache = new WeakMap();
+R.toonMaterial = function (src) {
+  if (!src || !(src.isMeshStandardMaterial || src.isMeshPhongMaterial || src.isMeshLambertMaterial)) return src;
+  if (src.shared && R._toonCache.has(src)) return R._toonCache.get(src);
+  const THREE = T3();
+  const t = new THREE.MeshToonMaterial({ color: src.color, map: src.map || null, gradientMap: R.toonGradient(), emissive: src.emissive || new THREE.Color(0), emissiveIntensity: src.emissiveIntensity != null ? src.emissiveIntensity : 1, emissiveMap: src.emissiveMap || null,
+    transparent: src.transparent, opacity: src.opacity, side: src.side, depthWrite: src.depthWrite, blending: src.blending, vertexColors: src.vertexColors, skinning: !!src.skinning, alphaTest: src.alphaTest });
+  // metal read dark through the environment map; toon has none, so carry that darkness into the base colour
+  const metal = src.metalness || 0; if (metal > 0) t.color.multiplyScalar(1 - 0.8 * metal);
+  t.name = src.name; t.userData = Object.assign({}, src.userData, { from: src.type });
+  if (src.shared) { t.shared = true; R._toonCache.set(src, t); }
+  return t;
+};
+R.outlineMaterial = function (skinned) {
+  const key = skinned ? '_olS' : '_ol'; if (R[key]) return R[key];
+  const THREE = T3(); const m = new THREE.MeshBasicMaterial({ color: 0x0b0710, side: THREE.BackSide, skinning: !!skinned });
+  m.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n transformed += normalize(normal) * 0.045;'); };
+  m.shared = true; return (R[key] = m);
+};
+/* Convert every lit material under `root` to toon, keep the model's own material references (mats, cloth,
+   capeMat…) pointing at the new ones, and (high quality) add a back-face ink hull to each solid mesh. */
+R.toonify = function (root, model, o = {}) {
+  if (!root || H.settings.look === 'classic') return;
+  const swap = new Map();
+  root.traverse(obj => {
+    if (!obj.isMesh || obj.userData.outline) return;
+    const m = obj.material; if (Array.isArray(m)) return;
+    if (!swap.has(m)) swap.set(m, R.toonMaterial(m));
+    obj.material = swap.get(m);
+  });
+  const remap = obj => { for (const k of Object.keys(obj)) {
+    const v = obj[k];
+    if (v && v.isMaterial && swap.has(v)) model[k] = swap.get(v);
+    else if (Array.isArray(v)) for (let i = 0; i < v.length; i++) if (v[i] && v[i].isMaterial && swap.has(v[i])) v[i] = swap.get(v[i]);
+  } };
+  if (model) { remap(model); if (model.parts) remap(model.parts); }
+  if (o.outline !== false && H.settings.quality === 'high') R.addOutline(root);
+};
+R.addOutline = function (root) {
+  const add = [];
+  root.traverse(obj => {
+    if (!obj.isMesh || obj.userData.outline || obj.userData.hasOutline || !obj.geometry || !obj.geometry.attributes.normal) return;
+    const m = obj.material; if (!m || Array.isArray(m) || m.transparent || m.blending !== 1 || !m.isMeshToonMaterial) return;
+    // only the parts that make the silhouette: small trims, buckles, eyes and fingers cost a draw call each and read as noise
+    const g = obj.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+    const sc = obj.scale; if (g.boundingSphere.radius * Math.max(sc.x, sc.y, sc.z) < 0.16) return;
+    add.push(obj);
+  });
+  for (const obj of add) {
+    const h = obj.isSkinnedMesh ? new (T3().SkinnedMesh)(obj.geometry, R.outlineMaterial(true)) : new (T3().Mesh)(obj.geometry, R.outlineMaterial(false));
+    if (obj.isSkinnedMesh) h.bind(obj.skeleton, obj.bindMatrix);
+    h.userData.outline = true; h.castShadow = false; h.receiveShadow = false; h.raycast = () => {};
+    obj.add(h); obj.userData.hasOutline = true;
+  }
+};
+
 /* ---- View operations the game asks for (the game never writes model fields directly) ---- */
 R.setModelVisible = function (m, v) { if (m && m.root) m.root.visible = v; };
 // a thrown weapon leaves the hand: the hero's held weapon follows p.throwing
@@ -1116,7 +1189,8 @@ R.animateDying = function (m, e, dt) { if (m && m.anim) R.animateEnemy(m, e, dt)
 // spirits turning ethereal: see-through copies of the model's own materials
 R.setGhost = function (m, on) {
   if (!m || !m.root) return;
-  if (!m._ghostMats) { m._ghostMats = []; m.root.traverse(o => { if (o.isMesh && o.material && !Array.isArray(o.material)) { o.material = o.material.clone(); m._ghostMats.push([o.material, o.material.opacity, o.material.transparent]); } }); }
+  if (!m._ghostMats) { m._ghostMats = []; m.root.traverse(o => { if (o.userData.outline) return; if (o.isMesh && o.material && !Array.isArray(o.material)) { o.material = o.material.clone(); m._ghostMats.push([o.material, o.material.opacity, o.material.transparent]); } }); }
+  m.root.traverse(o => { if (o.userData.outline) o.visible = !on; });
   for (const [mt, op, tr] of m._ghostMats) { mt.transparent = on ? true : tr; mt.opacity = on ? Math.min(op, 0.28) : op; mt.needsUpdate = true; }
 };
 const _q = { a: null, b: null, up: null };
@@ -1653,3 +1727,6 @@ R.update = function (dt, gameDt) {
   for (const m of R.fx.children) if (m.material && m.material.uniforms && m.material.uniforms.uTime) m.material.uniforms.uTime.value = R.t;
 };
 R.render = function () { R.renderer.render(R.scene, R.camera); };
+
+/* Characters get the illustrated look as they are built (heroes, enemies, bosses, menu and inventory previews). */
+for (const k of ['makeHero', 'makeEnemy', 'makeBoss']) { const base = R[k]; R[k] = function () { const m = base.apply(R, arguments); R.toonify(m.root, m); return m; }; }
