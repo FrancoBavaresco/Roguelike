@@ -41,6 +41,7 @@ R.init = function (canvas) {
   R.fx = new THREE.Group(); scene.add(R.fx);
   R.makeTextures();
   R.initParticles();
+  R.initGroundMarks();
   R.initTelegraphMat();
   // cursor reticle
   const ret = R.reticle = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 24), new THREE.MeshBasicMaterial({ color: 0xffe9b8, transparent: true, opacity: 0.85, depthWrite: false }));
@@ -66,7 +67,6 @@ R.applyQuality = function () {
   const dpr = Math.min(window.devicePixelRatio || 1, q === 'high' ? 2 : q === 'medium' ? 1.5 : 1);
   R.renderer.setPixelRatio(q === 'low' ? Math.min(dpr, 0.85) : dpr);
   R.renderer.shadowMap.enabled = q === 'high';
-  if (R._blobMat) R._blobMat.visible = q !== 'high';
   R.key.castShadow = q === 'high';
   R.maxParticles = q === 'low' ? 1400 : q === 'medium' ? 2600 : 4000;
   R.resize();
@@ -327,7 +327,7 @@ R.makeTelegraph = function (shape, o) {
   R.fx.add(m);
   return m;
 };
-R.removeMesh = function (m) { if (!m) return; if (m.parent) m.parent.remove(m); m.traverse && m.traverse(o => { if (o.geometry && o.geometry !== R.tgGeoC && o.geometry !== R.tgGeoR && !o.geometry.shared) o.geometry.dispose(); if (o.material) { if (Array.isArray(o.material)) o.material.forEach(mm => mm.dispose()); else if (!o.material.shared) o.material.dispose(); } }); };
+R.removeMesh = function (m) { if (!m) return; if (m.parent) m.parent.remove(m); m.traverse && m.traverse(o => { if (o.geometry && o.geometry !== R.tgGeoC && o.geometry !== R.tgGeoR && !o.geometry.shared) o.geometry.dispose(); if (o.material) { if (Array.isArray(o.material)) o.material.forEach(mm => mm.dispose()); else if (!o.material.shared) { if (o.material.map && o.material.map._own) o.material.map.dispose(); o.material.dispose(); } } }); };
 
 /* ---------------- Materials ---------------- */
 const MAT = {};
@@ -520,7 +520,7 @@ R.buildChamber = function (room, theme) {
     const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.2, 0.4, 6), R.std(0x2a2020, { metalness: 0.5 })); bowl.position.y = 1.1; g.add(bowl);
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 1.0, 5), bowl.material); leg.position.y = 0.5; g.add(leg);
     const fl = R.glowSprite(theme.rune, 1.6); fl.position.y = 1.5; g.add(fl);
-    g.position.set(p[0], 0, p[1]); R.chamber.add(g);
+    g.position.set(p[0], 0, p[1]); g.userData.brazier = true; R.chamber.add(g);
     let light = null;
     if (i < 2 && H.settings.quality !== 'low') { light = R.brazierLights[i]; light.color.setHex(theme.rune); light.intensity = 1.2; light.position.set(p[0], 1.8, p[1]); }
     R.braziers.push({ x: p[0], z: p[1], fl, light, ph: R.drand() * 7 });
@@ -535,7 +535,14 @@ R.buildChamber = function (room, theme) {
   R.key.position.set(b.minX + W * 0.3, 18, b.minZ + D * 0.7); R.key.target.position.set((b.minX + b.maxX) / 2, 0, (b.minZ + b.maxZ) / 2);
   { const sc = R.key.shadow.camera, ext = Math.hypot(W, D) / 2 + 3; sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.updateProjectionMatrix(); }
   if (R.rim) R.rim.intensity = H.settings.look === 'classic' ? 0 : 0.45;
+  // fewer draw calls: walls, rune strips and other loose static pieces become a few meshes; each pillar
+  // and brazier is merged inside its own group (pillars must stay separate to fade on their own)
+  if (H.settings.bake !== false) {
+    R.bakeChildren(R.chamber);
+    for (const g of R.chamber.children) if (g.isGroup && (g.userData.pillar || g.userData.brazier)) R.bakeChildren(g);
+  }
   R.applyWallCut();
+  R._warmPending = Math.max(1, H.DEPTHS.indexOf(theme));   // done on the next frame, once the heroes (and their lights) exist
 };
 R.makeWoodTexture = function () {
   const W = 256, Hh = 512; const cv = document.createElement('canvas'); cv.width = W; cv.height = Hh; const c = cv.getContext('2d');
@@ -584,8 +591,10 @@ R.buildDoor = function (d, theme) {
   const portal = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 3.7), portalMat); portal.position.set(0, 1.7, 0.05); g.add(portal);
   // rustic double wooden doors, hinged on the stone jambs; they swing into the room when it is cleared
   const leaves = R.makeDoorLeaves(); leaves.forEach(l => g.add(l));
+  if (H.settings.bake !== false) { R.bakeChildren(g); leaves.forEach(l => l.children.forEach(leaf => R.bakeChildren(leaf))); }
   const bars = { position: { y: 0 } };
   const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: R.glyphTexture(info.glyph, info.css, info.name), transparent: true, depthWrite: false }));
+  icon.material.map._own = true;   // made for this door only: freed with it
   icon.scale.set(2.6, 2.6, 2.6); icon.position.set(0, 5.9, 0.2); g.add(icon);
   g.position.set(d.x, 0, d.z);
   R.chamber.add(g);
@@ -659,12 +668,78 @@ R.buildProp = function (prop, theme) {
    Static dressing per depth, merged into one mesh per material so a room adds a handful of draw calls.
    It sits on wall tops, hangs on the north and west wall faces (the ones the isometric camera sees) or
    lies flat on the floor by the walls: nothing stands where it could be mistaken for an obstacle. */
-R.mergeGeos = function (list) {
+R.mergeGeos = function (list, keep, withColor) {
   const THREE = T3(); let n = 0;
-  const parts = list.map(({ geo, mx }) => { const g = geo.index ? geo.toNonIndexed() : geo.clone(); geo.dispose(); g.applyMatrix4(mx); n += g.attributes.position.count; return g; });
-  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3); let o = 0;
-  for (const g of parts) { pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); o += g.attributes.position.count; g.dispose(); }
-  const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); return out;
+  const parts = list.map(({ geo, mx }) => { const g = geo.index ? geo.toNonIndexed() : geo.clone(); if (!keep && !geo.shared) geo.dispose(); g.applyMatrix4(mx); n += g.attributes.position.count; return g; });
+  const withUV = parts.every(g => g.attributes.uv);
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = withUV ? new Float32Array(n * 2) : null, col = withColor ? new Float32Array(n * 3) : null; let o = 0;
+  parts.forEach((g, i) => { const c = g.attributes.position.count; pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); if (uv) uv.set(g.attributes.uv.array, o * 2); if (col) { const k = list[i].color; for (let v = 0; v < c; v++) { col[(o + v) * 3] = k.r; col[(o + v) * 3 + 1] = k.g; col[(o + v) * 3 + 2] = k.b; } } o += c; g.dispose(); });
+  const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); if (uv) out.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); if (col) out.setAttribute('color', new THREE.BufferAttribute(col, 3)); return out;
+};
+/* Merge the static direct children of a group that look alike (same material apart from colour, same
+   shadow flags) into one mesh each; colours become vertex colours. Used for the room's walls, pillars
+   and braziers, which never move once built. */
+R.bakeChildren = function (parent, accept) {
+  const THREE = T3(); const groups = new Map();
+  for (const c of parent.children) {
+    if (!c.isMesh || c.isSkinnedMesh || c.children.length || !c.visible || Object.keys(c.userData).length || (accept && !accept(c))) continue;
+    const mt = c.material; if (!mt || Array.isArray(mt) || mt.transparent || mt.blending !== 1 || mt.isShaderMaterial || mt.vertexColors || !c.geometry.attributes.normal) continue;
+    const key = [mt.type, mt.map ? mt.map.uuid : '', mt.emissive ? mt.emissive.getHex() : '', mt.side, mt.flatShading, mt.roughness, mt.metalness, mt.gradientMap ? 1 : 0, c.castShadow, c.receiveShadow].join('|');
+    if (!groups.has(key)) groups.set(key, []); groups.get(key).push(c);
+  }
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const same = list.every(c => c.material.color.equals(list[0].material.color));
+    const items = list.map(c => { c.updateMatrix(); return { geo: c.geometry, mx: c.matrix.clone(), color: c.material.color }; });
+    let mat = list[0].material; if (!same) { mat = mat.clone(); mat.color.setRGB(1, 1, 1); mat.vertexColors = true; }
+    const mesh = new THREE.Mesh(R.mergeGeos(items, false, !same), mat); mesh.castShadow = list[0].castShadow; mesh.receiveShadow = list[0].receiveShadow;
+    for (const c of list) { parent.remove(c); if (c.material !== mat && !c.material.shared && list.every(o => o === c || o.material !== c.material)) c.material.dispose(); }
+    parent.add(mesh);
+  }
+};
+/* Bake: inside each rigid piece of a model (its body, and every part the animation moves), merge the
+   static meshes that share a material into one mesh. The pieces the animation touches stay as they
+   are, so poses, flashes and fades work unchanged; a husk goes from ~17 draw calls to a handful. */
+R.bakeModel = function (m) {
+  if (!m || !m.body || H.settings.bake === false) return;
+  const THREE = T3();
+  const refs = new Set(); const seen = new Set();
+  const collect = v => { if (!v || typeof v !== 'object' || seen.has(v)) return; seen.add(v); if (v.isObject3D) { refs.add(v); return; } if (v.isMaterial || v.isTexture || v.isAnimationMixer || v.mixer) return; if (Array.isArray(v)) v.forEach(collect); else if (v.constructor === Object) Object.values(v).forEach(collect); };
+  // everything the model keeps a handle on (its fields, arrays of parts, and handles stored in userData) may move,
+  // hide or change later, so it stays a separate piece
+  for (const [k, v] of Object.entries(m)) if (k !== 'mats' && k !== 'anim' && k !== 'glbInst') collect(v);
+  m.root.traverse(o => { for (const v of Object.values(o.userData || {})) { seen.delete(v); collect(v); } });
+  if ((m.parts && m.parts.glb) || m.glb) return;               // .glb models are already authored; leave them alone
+  const anchors = new Set(refs); anchors.add(m.body);
+  m.root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4();
+  for (const A of anchors) {
+    if (A !== m.body && !isUnder(A, m.body)) continue;
+    const groups = new Map();
+    const walk = o => { for (const c of o.children) { if (anchors.has(c) || !c.visible) continue; if (c.isMesh && !c.isSkinnedMesh && !c.children.length && okMat(c.material) && c.geometry && c.geometry.attributes.normal && !c.userData.outline) { const key = matKey(c.material); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(c); } walk(c); } };
+    walk(A);
+    inv.copy(A.matrixWorld).invert();
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      const items = list.map(c => ({ geo: c.geometry, mx: new THREE.Matrix4().multiplyMatrices(inv, c.matrixWorld), color: c.material.color }));
+      const sameColor = list.every(c => c.material.color.equals(list[0].material.color));
+      let mat = list[0].material;
+      if (!sameColor) {
+        // one material for all of them: white base colour, each piece keeps its colour as vertex colour
+        mat = list[0].material.clone(); mat.color.setRGB(1, 1, 1); mat.vertexColors = true; mat.userData = Object.assign({}, list[0].material.userData);
+        const gone = new Set(list.map(c => c.material));
+        if (m.mats) { m.mats = m.mats.filter(x => !gone.has(x) || stillUsed(x, list)); m.mats.push(mat); }
+      }
+      const mesh = new THREE.Mesh(R.mergeGeos(items, false, !sameColor), mat);
+      mesh.castShadow = list.some(c => c.castShadow); mesh.receiveShadow = list.some(c => c.receiveShadow); mesh.userData.baked = list.length;
+      for (const c of list) c.parent.remove(c);
+      A.add(mesh);
+    }
+  }
+  function isUnder(o, top) { for (let q = o.parent; q; q = q.parent) if (q === top) return true; return false; }
+  function matKey(mt) { return [mt.type, mt.map ? mt.map.uuid : '', mt.emissive ? mt.emissive.getHex() : '', mt.emissiveIntensity, mt.side, mt.flatShading, mt.roughness, mt.metalness, mt.envMap ? mt.envMap.uuid : '', mt.gradientMap ? mt.gradientMap.uuid : '', mt.depthWrite, mt.alphaTest, mt.fog].join('|'); }
+  function stillUsed(mt, merged) { let used = false; m.root.traverse(o => { if (o.material === mt && merged.indexOf(o) < 0) used = true; }); return used; }
+  function okMat(mt) { return mt && !Array.isArray(mt) && !mt.transparent && mt.blending === 1 && !mt.isShaderMaterial && !mt.vertexColors; }
 };
 R.buildDecor = function (room, theme, wallTops, doorXs) {
   const THREE = T3(), rnd = R.drand, b = room.bounds;
@@ -1274,14 +1349,14 @@ R.toonify = function (root, model, o = {}) {
   if (model) { remap(model); if (model.parts) remap(model.parts); }
   if (o.outline !== false && H.settings.quality === 'high') R.addOutline(root);
 };
-R.addOutline = function (root) {
+R.addOutline = function (root, minR = 0.16) {
   const add = [];
   root.traverse(obj => {
     if (!obj.isMesh || obj.userData.outline || obj.userData.hasOutline || !obj.geometry || !obj.geometry.attributes.normal) return;
     const m = obj.material; if (!m || Array.isArray(m) || m.transparent || m.blending !== 1 || !m.isMeshToonMaterial) return;
     // only the parts that make the silhouette: small trims, buckles, eyes and fingers cost a draw call each and read as noise
     const g = obj.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
-    const sc = obj.scale; if (g.boundingSphere.radius * Math.max(sc.x, sc.y, sc.z) < 0.16) return;
+    const sc = obj.scale; if (g.boundingSphere.radius * Math.max(sc.x, sc.y, sc.z) < minR) return;
     add.push(obj);
   });
   for (const obj of add) {
@@ -1576,7 +1651,9 @@ R.makeEnemy = function (type, elite) {
   // hostile ground marker
   const ringC = elite ? 0xf0bd4f : 0xff2e55;
   const mark = new THREE.Mesh(new THREE.RingGeometry(def.r * S * 0.95, def.r * S * 1.15, 24), new THREE.MeshBasicMaterial({ color: ringC, transparent: true, opacity: 0.7, depthWrite: false })); mark.rotation.x = -Math.PI / 2; mark.position.y = 0.045; root.add(mark);
-  const shadow = new THREE.Mesh(new THREE.CircleGeometry(def.r * S, 16), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0.4, depthWrite: false })); shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.04; root.add(shadow);
+  // the ring and the contact shadow of every enemy are drawn together, two draw calls for all of them
+  // (R.updateGroundMarks); the ring mesh stays as the on/off switch the game already uses
+  mark.material.visible = false; root.userData.ground = { r: def.r * S, c: ringC };
   if (elite) { const crown = new THREE.Group(); for (let i = 0; i < 5; i++) { const c = part(new THREE.ConeGeometry(0.07, 0.3, 4), R.basic(0xf0bd4f), Math.cos(i / 5 * 6.28) * 0.3, 0, Math.sin(i / 5 * 6.28) * 0.3, crown); } crown.position.y = (type === 'brute' ? 3.4 : 2.7); root.add(crown); parts.crown = crown; }
   const ice = new THREE.Mesh(new THREE.IcosahedronGeometry(def.r * S * 1.5, 0), new THREE.MeshStandardMaterial({ color: 0xbff6ff, emissive: 0x3aa8d8, emissiveIntensity: 0.5, transparent: true, opacity: 0.55, flatShading: true })); ice.position.y = def.r * S * 1.2; ice.visible = false; root.add(ice);
   for (const mm of mats) mm.userData.em = mm.emissive ? mm.emissive.getHex() : 0;
@@ -1852,6 +1929,58 @@ R.updateAmbient = function (dt) {
   if (Math.random() < dt * rate) R.emit(f.x + (Math.random() - .5) * 30, Math.random() * 4, f.z + (Math.random() - .5) * 22, (Math.random() - .5) * .3, 0.15, (Math.random() - .5) * .3, 5, 0.12, 0.05, R.theme.rune, 0.45, 0, 0.1);
 };
 
+/* Warm-up: when a depth starts (or the quality or art style changes), build one of every enemy that can
+   appear there, plus an elite and the depth's warden, and compile their shaders right away. The first
+   wave then never waits for a shader. The warm models are kept (not drawn) so their programs stay alive. */
+R.prewarm = function (depth) {
+  const key = depth + '|' + H.settings.quality + '|' + H.settings.look + '|' + H.settings.camera;
+  if (R._warmKey === key || !R.renderer) return; R._warmKey = key;
+  for (const m of R._warm || []) { if (m.glbInst && H.models) H.models.release(m.glbInst); R.removeMesh(m.root); }
+  for (const o of R._warmFx || []) R.removeMesh(o); R._warmFx = [];
+  R._warm = [];
+  const types = Object.keys(H.ENEMIES).filter(t => { const d = H.ENEMIES[t]; return !d.boss && d.minDepth <= depth; });
+  const boss = H.DEPTHS[depth] && H.DEPTHS[depth].boss;
+  const mr = Math.random; Math.random = R.vrand;   // building models must not touch the game's random sequence
+  const holder = new (T3().Group)();
+  try {
+    for (const t of types) R._warm.push(R.makeEnemy(t, false));
+    if (types[0]) R._warm.push(R.makeEnemy(types[0], true));
+    if (boss && R.makeBoss) R._warm.push(R.makeBoss(boss));
+    for (const m of R._warm) { if (m.root.parent) m.root.parent.remove(m.root); m.root.position.set(0, -50, 0); holder.add(m.root); }
+    // and what fights throw around: projectiles, telegraphs, zones
+    const fx = []; const grab = o => { if (o) { if (o.parent) o.parent.remove(o); o.position.y -= 50; holder.add(o); fx.push(o); } };
+    try { grab(R.makeProjMesh(0xff8a3a, true, 0.3)); grab(R.makeProjMesh(0xff8a3a, false, 0.3)); for (const sh of ['circle', 'cone', 'rect']) grab(R.makeTelegraph(sh, { x: 0, z: 0, r: 1, w: 1, len: 2, angle: 0.6 })); grab(R.makeZoneMesh(0xffffff, 1)); } catch (e) { }
+    try { R.ring(0, 0, 0xffffff, 0.1, 0.2, 0.001, -50); R.groundArrow(0, 0, 0, 1, 0.5, 0xffffff, 0.001); R.arcs[R.arcs.length - 1].m.position.y = -50; R.decal(0, 0, 0xffffff, 0.5, 0.001); R.decals[R.decals.length - 1].m.position.y = -50; } catch (e) { }
+    R._warmFx = fx;
+    // parts that only show up later (hands while casting, ice, crowns) must be compiled too
+    const hidden = []; holder.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    R.scene.add(holder);
+    try { R.renderer.compile(R.scene, R.camera); } catch (e) { /* a hint only */ }
+    hidden.forEach(o => { o.visible = false; });
+  } finally { Math.random = mr; R.scene.remove(holder); for (const m of R._warm) holder.remove(m.root); for (const o of R._warmFx || []) holder.remove(o); }
+};
+R.initGroundMarks = function () {
+  const THREE = T3(), N = 160;
+  const disc = new THREE.CircleGeometry(1, 16); disc.rotateX(-Math.PI / 2);
+  const ring = new THREE.RingGeometry(0.95, 1.15, 24); ring.rotateX(-Math.PI / 2);
+  const sh = new THREE.InstancedMesh(disc, new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0.4, depthWrite: false }), N);
+  const rg = new THREE.InstancedMesh(ring, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false }), N);
+  for (let i = 0; i < N; i++) rg.setColorAt(i, new THREE.Color(0xff2e55));
+  for (const m of [sh, rg]) { m.count = 0; m.frustumCulled = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); R.scene.add(m); }
+  sh.renderOrder = -2; rg.renderOrder = -1;
+  R.ground = { sh, rg, N, m4: new THREE.Matrix4(), q: new THREE.Quaternion(), p: new THREE.Vector3(), s: new THREE.Vector3(), c: new THREE.Color() };
+};
+R.updateGroundMarks = function () {
+  const g = R.ground; if (!g) return; let ns = 0, nr = 0;
+  const G = H.G;
+  if (G && G.active) for (const e of G.enemies) {
+    const m = e.model; if (!m || !m.root || !m.root.visible || !m.root.userData.ground) continue;
+    const u = m.root.userData.ground, sc = m.root.scale.x * u.r, y = m.root.position.y;
+    if (ns < g.N) { g.m4.compose(g.p.set(m.root.position.x, y + 0.04, m.root.position.z), g.q, g.s.set(sc, 1, sc)); g.sh.setMatrixAt(ns++, g.m4); }
+    if (m.mark && m.mark.visible && nr < g.N) { g.m4.compose(g.p.set(m.root.position.x, y + 0.045, m.root.position.z), g.q, g.s.set(sc, 1, sc)); g.rg.setMatrixAt(nr, g.m4); g.rg.setColorAt(nr, g.c.setHex(u.c)); nr++; }
+  }
+  g.sh.count = ns; g.rg.count = nr; g.sh.instanceMatrix.needsUpdate = true; g.rg.instanceMatrix.needsUpdate = true; if (g.rg.instanceColor) g.rg.instanceColor.needsUpdate = true;
+};
 R.update = function (dt, gameDt) {
   R.t += dt;
   R.updateParticles(gameDt);
@@ -1860,28 +1989,13 @@ R.update = function (dt, gameDt) {
   R.updateAmbient(dt);
   R.updateCamera(dt);
   R.updateOcclusion(dt);
+  R.updateGroundMarks();
+  if (R._warmPending) { const d = R._warmPending; R._warmPending = 0; R.prewarm(d); }
   if (R.pMat) { /* keep uniform current */ }
   for (const m of R.fx.children) if (m.material && m.material.uniforms && m.material.uniforms.uTime) m.material.uniforms.uTime.value = R.t;
 };
 R.render = function () { R.renderer.render(R.scene, R.camera); };
 
 /* Characters get the illustrated look as they are built (heroes, enemies, bosses, menu and inventory previews). */
-for (const k of ['makeHero', 'makeEnemy', 'makeBoss']) { const base = R[k]; R[k] = function () { const m = base.apply(R, arguments); R.toonify(m.root, m); R.addBlob(m, k, arguments[0], arguments[1]); return m; }; }
+for (const k of ['makeHero', 'makeEnemy', 'makeBoss']) { const base = R[k]; R[k] = function () { const m = base.apply(R, arguments); R.toonify(m.root, m, { outline: false }); if (k !== 'makeHero') R.bakeModel(m); if (H.settings.quality === 'high' && H.settings.look !== 'classic') R.addOutline(m.root, k === 'makeHero' ? 0.16 : 0.3); return m; }; }
 
-/* Contact shadows: a soft dark disc under every character, drawn only when real shadows are off
-   (medium and low quality), so figures stay grounded. One shared geometry and material. */
-R.blobMat = function () {
-  if (R._blobMat) return R._blobMat;
-  const THREE = T3();
-  const m = new THREE.MeshBasicMaterial({ map: R.canvasTex(64, 64, c => { const g = c.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(0,0,0,.65)'); g.addColorStop(0.6, 'rgba(0,0,0,.35)'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, 0, 64, 64); }), transparent: true, depthWrite: false, color: 0xffffff });
-  m.shared = true; m.visible = H.settings.quality !== 'high'; return (R._blobMat = m);
-};
-R.addBlob = function (m, kind, type, elite) {
-  if (!m || !m.root) return;
-  const THREE = T3();
-  if (!R._blobGeo) { R._blobGeo = new THREE.PlaneGeometry(2, 2); R._blobGeo.rotateX(-Math.PI / 2); R._blobGeo.shared = true; }
-  const def = kind === 'makeHero' ? { r: 0.5 } : (H.ENEMIES[type] || {});
-  const r = (def.r || 0.6) * (kind === 'makeBoss' ? 1.6 : 1.25) * (elite ? 1.3 : 1);
-  const b = new THREE.Mesh(R._blobGeo, R.blobMat()); b.scale.setScalar(r); b.position.y = 0.025; b.renderOrder = -1; b.userData.blob = true;
-  m.root.add(b); m.blob = b;
-};
