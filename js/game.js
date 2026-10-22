@@ -96,6 +96,8 @@ G.makePlayer = function (idx, seat) {
   p.charId = (G.run && G.run.mode === 'tutorial') ? 'percy' : (seat.character || (idx === 0 ? (H.save.meta.character || 'percy') : 'percy'));
   { const hero = H.HEROES[p.charId] || H.HEROES.percy; const want = p.spells[0] && p.spells[0].id; p.basePrimary = hero.primaries.includes(want) ? want : hero.defaultPrimary; p.spells[0] = { id: p.basePrimary, rank: 1, cd: 0 }; }
   p.useStam = p.charId === 'knight'; p.maxStam = H.STAMINA.max; p.stam = p.maxStam; p.stamT = 0;
+  // animation state written by the game; the view reads it (castN/swingN/twirlN are event counters)
+  p.anim = { castN: 0, castSide: 1, swing: null, swingN: 0, twirlN: 0, chargeK: 0, el: null };
   p.model = H.R.makeHero(p.charId, accent, idx === 0 ? 0x38323f : 0x1e3a40);
   if (idx === 0 && H.CHARACTERS[p.charId]) p.name = H.CHARACTERS[p.charId].name;
   // each hero carries their own persistent equipment (one seat per hero in co-op)
@@ -237,7 +239,7 @@ G.loadRoom = function (type, opts = {}) {
   G.room = room;
   H.R.buildChamber(room, H.DEPTHS[Math.min(3, depth)]);
   // place players at entry
-  G.players.forEach((p, i) => { p.x = (i - (G.players.length - 1) / 2) * 1.6; p.z = room.bounds.maxZ - 2; p.vx = p.vz = 0; p.faceAng = 0; p.dashT = 0; p.secondWind = false; p.statuses = {}; p.slowT = 0; p.spinT = 0; p.lungeT = 0; p.lungeHit = null; if (p.charge) { p.charge = null; p.model.chargeK = 0; H.R.chargeArrow(p, false); } });
+  G.players.forEach((p, i) => { p.x = (i - (G.players.length - 1) / 2) * 1.6; p.z = room.bounds.maxZ - 2; p.vx = p.vz = 0; p.faceAng = 0; p.dashT = 0; p.secondWind = false; p.statuses = {}; p.slowT = 0; p.spinT = 0; p.lungeT = 0; p.lungeHit = null; if (p.charge) { p.charge = null; p.anim.chargeK = 0; H.R.chargeArrow(p, false); } });
   H.R.follow.x = 0; H.R.follow.z = room.bounds.maxZ - 6; H.R.updateCamera(0, true);
   // encounters
   if (['combat', 'elite', 'warden'].includes(type)) G.setupEncounter(room, type);
@@ -380,7 +382,7 @@ G.step = function (dt) {
   for (const p of G.players) G.updatePlayer(p, dt);
   for (const e of G.enemies) if (!e.dead) G.updateEnemy(e, dt);
   G.updateProjs(dt); G.updateFlyers(dt); G.updateZones(dt); G.updateTelegraphs(dt); G.updateTotems(dt); G.updateVents(dt);
-  G.enemies = G.enemies.filter(e => { if (e.dead && e.removeT <= 0) { H.R.removeMesh(e.model.root); return false; } if (e.dead) { e.removeT -= dt; if (e.model.anim) H.R.animateEnemy(e.model, e, dt); } return true; });
+  G.enemies = G.enemies.filter(e => { if (e.dead && e.removeT <= 0) { H.R.removeMesh(e.model.root); return false; } if (e.dead) { e.removeT -= dt; H.R.animateDying(e.model, e, dt); } return true; });
   G.runTimers(dt);
   G.updateRoom(dt);
   if (run.comboT > 0) { run.comboT -= dt; if (run.comboT <= 0) run.combo = 0; }
@@ -438,7 +440,7 @@ G.pickTarget = function (p, dx, dz, maxAng, range, px, pz) {
 };
 G.updatePlayer = function (p, dt) {
   const m = p.model;
-  if (p.dead) { m.root.visible = false; return; }
+  if (p.dead) { H.R.setModelVisible(m, false); return; }
   const it = p.intent || { mx: 0, mz: 0, held: {}, pressed: {}, released: {} };
   // timers
   p.iframes = Math.max(0, p.iframes - dt); p.invuln = Math.max(0, p.invuln - dt); p.hurtT = Math.max(0, p.hurtT - dt); p.dashChainT = Math.max(0, (p.dashChainT || 0) - dt); p.invulnBlink = Math.max(0, p.invulnBlink - dt);
@@ -486,7 +488,7 @@ G.updatePlayer = function (p, dt) {
     if (p.dashT <= 0) { p.vx = 0; p.vz = 0; p.dashTrail = null; p.dashFx = null; p.dashChainT = 0.35; }
   } else {
     p.bufDash = Math.max(0, (p.bufDash || 0) - dt);
-    if (p.bufDash > 0 && p.dashCharges > 0 && p.castLock <= 0 && !(p.lungeT > 0)) { p.bufDash = 0; if (p.charge) { p.charge = null; p.model.chargeK = 0; H.R.chargeArrow(p, false); } G.dash(p, it); }
+    if (p.bufDash > 0 && p.dashCharges > 0 && p.castLock <= 0 && !(p.lungeT > 0)) { p.bufDash = 0; if (p.charge) { p.charge = null; p.anim.chargeK = 0; H.R.chargeArrow(p, false); } G.dash(p, it); }
     const sp = p.speed * (p.slowT > 0 ? 0.6 : 1) * (p.casting > 0 ? 0.55 : 1) * (p.stSlow || 1) * (p.spinT > 0 ? 1 + ((p.spinSt && p.spinSt.haste) || 0) : 1) * (p.charge ? 0.35 : 1);
     const tx = it.mx * sp, tz = it.mz * sp;
     const k = 1 - Math.exp(-dt * 16);
@@ -517,13 +519,13 @@ G.updatePlayer = function (p, dt) {
       const want = it.pressed[a] || (p.bufCast && p.bufCast.i === i && p.bufCast.t > 0 && it.held[a]);
       if (!p.charge && want && !(s.cd <= 0 && p.dashT <= 0 && !(p.spinT > 0) && !(p.lungeT > 0)) && it.pressed[a] && s.cd < 0.3) p.bufCast = { i, t: 0.25 };
       if (!p.charge && want && s.cd <= 0 && p.dashT <= 0 && !(p.spinT > 0) && !(p.lungeT > 0) && G.stamCost(p, def) > p.stam) { if (it.pressed[a]) G.noStamina(p, i); }
-      else if (!p.charge && want && s.cd <= 0 && p.dashT <= 0 && !(p.spinT > 0) && !(p.lungeT > 0)) { p.bufCast = null; p.charge = { slot: i, t: 0 }; p.model.chargeK = 0; H.audio.play('sword_draw'); }
+      else if (!p.charge && want && s.cd <= 0 && p.dashT <= 0 && !(p.spinT > 0) && !(p.lungeT > 0)) { p.bufCast = null; p.charge = { slot: i, t: 0 }; p.anim.chargeK = 0; H.audio.play('sword_draw'); }
       if (p.charge && p.charge.slot === i) {
         const cc = def.chargeable; p.charge.t += dt; const k = Math.min(1, p.charge.t / cc.time);
-        p.model.chargeK = k; if (k >= 1 && !p.charge.full) { p.charge.full = true; H.audio.play('sword_ready'); G.float(p.x, 2.7, p.z, H.t('READY'), 'small good'); }
+        p.anim.chargeK = k; if (k >= 1 && !p.charge.full) { p.charge.full = true; H.audio.play('sword_ready'); G.float(p.x, 2.7, p.z, H.t('READY'), 'small good'); }
         const st = H.spellStats(s.id, s.rank, p); const dist = G.thrustDist(def, st, k);
         H.R.chargeArrow(p, true, p.x + p.aimDX * 0.5, p.z + p.aimDZ * 0.5, Math.atan2(p.aimDX, p.aimDZ), dist + def.lunge.tip - 0.5, k);
-        if (!it.held[a] || p.charge.t > cc.time + cc.hold) { p.thrustCharge = k; p.charge = null; p.model.chargeK = 0; H.R.chargeArrow(p, false); G.tryCast(p, i); }
+        if (!it.held[a] || p.charge.t > cc.time + cc.hold) { p.thrustCharge = k; p.charge = null; p.anim.chargeK = 0; H.R.chargeArrow(p, false); G.tryCast(p, i); }
       }
       continue;
     }
@@ -600,12 +602,12 @@ G.tryCast = function (p, i, quiet) {
   p.mana -= st.cost;
   let cd = st.cd * Math.pow(0.85, md.rapid || 0); if (p.tempoT > 0) { cd *= 0.6; p.tempoT = 0; }
   if (def.charges) { s.charges--; s.maxCd = cd; if (s.cd <= 0) s.cd = cd; } else { s.cd = cd; s.maxCd = cd; }
-  p.lastEl = def.el; H.R.setRogueElement(p.model, def.el);
+  p.lastEl = def.el; p.anim.el = def.el;
   p.aimHoldT = def.role === 'attack' ? 0.45 : 0.3; p.faceAng = Math.atan2(-p.aimDX, -p.aimDZ);
-  p.model.castT = 1; p.model.castSide = -p.model.castSide; p.casting = def.role === 'attack' ? 0.12 : 0.05;
+  p.anim.castN++; p.anim.castSide = -p.anim.castSide; p.casting = def.role === 'attack' ? 0.12 : 0.05;
   const run = G.run; run.castsBySpell[s.id] = (run.castsBySpell[s.id] || 0) + 1;
   const kitSfx = { cinder_bolt: 'fire_bolt', flamethrower: 'flamethrower', meteor: 'meteor_fall', pyre_supernova: 'nova_charge', firestorm: null, fist_strike: null }[def.id];
-  if (def.weapon) { p.model.castSide = 1; p.model.swing = def.swing || def.kind; p.model.swingT = 1; }
+  if (def.weapon) { p.anim.castSide = 1; p.anim.swing = def.swing || def.kind; p.anim.swingN++; }
   if (kitSfx) H.audio.play(kitSfx, { pan: p.aimDX }); else if (kitSfx !== null && !def.weapon) H.audio.play('cast_' + def.el);
   G.md = md; G.SPELL[def.kind](p, def, st); G.md = {};
   G.emit('cast', { p, slot: i, id: s.id });
@@ -661,7 +663,7 @@ G.SPELL = {
     if (charged && def.weapon) {
       // rushing slash: a full-circle whirl of the blade out of the dash
       const R0 = ch.radius + Math.max(0, st.range - def.range), dmg = Math.round(st.dmg * ch.dmgMul);
-      p.model.twirlT = 0.26; p.model.swingT = 0;
+      p.anim.twirlN++; // the view starts the whirl and cancels the swing
       H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0, 0xf6ecd4, 0.38); H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0 * 0.7, 0xcfd8e6, 0.3, 0.14);
       H.R.burst(p.x, 0.5, p.z, 0xe8ecf2, 26 * G.fxMul(p), 8, 0.35, 0.4, { flat: true });
       H.R.shake(0.24); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.05);
@@ -741,8 +743,7 @@ G.SPELL = {
     if (!tgt) tgt = G.enemiesNear(p.x, p.z, st.range).filter(e => !e.dead && e.spawnK >= 1).sort((a, b) => H.dist2(a.x, a.z, p.x, p.z) - H.dist2(b.x, b.z, p.x, p.z))[0] || null;
     const wpn = H.ITEMS[p.equip.weapon];
     const f = { p, def, st, hops: st.bounces, hit: new Set(), x: p.x + p.aimDX * 0.8, z: p.z + p.aimDZ * 0.8, y: 1.2, tgt, tx: p.x + p.aimDX * st.range, tz: p.z + p.aimDZ * st.range, back: false, mesh: H.R.makeThrownWeapon(wpn), spin: 0 };
-    if (p.model.sword) p.model.sword.visible = false;
-    p.throwing = f;
+    p.throwing = f; H.R.syncHeroWeapon(p.model, p); // the axe leaves the hand right away
     G.flyers.push(f); H.audio.play('axe_swish');
   },
   execute(p, def, st) {
@@ -1327,7 +1328,7 @@ G.tickStatuses = function (e, dt) {
 G.kill = function (e, o = {}) {
   if (e.dead) return;
   e.dead = true; e.removeT = o.plunge ? 0.6 : 0.05; e.hp = 0;
-  if (e.model && e.model.anim && e.model.anim.actions.death) { e.removeT = Math.max(e.removeT, 0.9); if (e.model.mark) e.model.mark.visible = false; }
+  e.removeT = Math.max(e.removeT, H.R.enemyDeathHold(e.model));
   G.cancelTelegraphs(e);
   const run = G.run; const def = e.def;
   if (e.type === 'dummy' || e.type === 'turret') return;
@@ -1342,9 +1343,9 @@ G.kill = function (e, o = {}) {
     H.R.burst(e.x, 1, e.z, col, e.elite ? 50 : 22, 7, 0.6, 0.55, { palette: [col, 0x2a1a2a, 0xffd0d8] });
     H.R.burst(e.x, 0.6, e.z, 0x1a1020, 10, 4, 1, 0.8, { grav: 6 });
     H.R.decal(e.x, e.z, 0x4a1020, e.r * 1.8, 4);
-  } else { e.model.root.visible = true; }
+  }
   if (e.statuses.burn && o.src && o.src.charms && o.src.charms.has('ember_bloom')) { H.R.ring(e.x, e.z, 0xff6a2b, 0.3, 2.5, 0.3); for (const n of G.enemiesNear(e.x, e.z, 2.5, e)) G.damage(n, 14, { src: o.src, el: 'ember', spell: 'ember_bloom' }); }
-  e.model.root.visible = !!o.plunge;
+  H.R.enemyDeathVisual(e.model, !!o.plunge);
   if (o.plunge) { e.fallY = 0; e.fallAnim = true; }
   // elite affixes on death
   if (e.elite === 'volatile') { for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; G.fireProj({ team: 1, x: e.x, z: e.z, dx: Math.cos(a), dz: Math.sin(a), speed: 7, range: 14, r: 0.35, dmg: Math.round(9 * e.dmgMul), size: 0.4, srcName: 'a Volatile burst' }); } H.audio.play('explode'); }
@@ -1420,14 +1421,9 @@ G.killPlayer = function (p) {
 G.tickEthereal = function (e, dt) {
   const C = H.classOf(e); if (!C || !C.ethereal || e.boss) return;
   if (e.ethCd == null) e.ethCd = H.rand(2.5, 5);
-  if (e.etherealT > 0) { e.etherealT -= dt; if (e.etherealT <= 0) { e.etherealT = 0; G.setGhost(e, false); } return; }
+  if (e.etherealT > 0) { e.etherealT -= dt; if (e.etherealT <= 0) { e.etherealT = 0; H.R.setGhost(e.model, false); } return; }
   e.ethCd -= dt;
-  if (e.ethCd <= 0 && e.ai && e.ai.state !== 'windup') { e.ethCd = H.rand(5.5, 7.5); e.etherealT = 1.6; G.setGhost(e, true); H.R.burst(e.x, 1.4, e.z, 0x8fd8e8, 14, 3, 0.5, 0.4); }
-};
-G.setGhost = function (e, on) {
-  if (!e.model || !e.model.root) return;
-  if (!e._ghostMats) { e._ghostMats = []; e.model.root.traverse(o => { if (o.isMesh && o.material && !Array.isArray(o.material)) { o.material = o.material.clone(); e._ghostMats.push([o.material, o.material.opacity, o.material.transparent]); } }); }
-  for (const [m, op, tr] of e._ghostMats) { m.transparent = on ? true : tr; m.opacity = on ? Math.min(op, 0.28) : op; m.needsUpdate = true; }
+  if (e.ethCd <= 0 && e.ai && e.ai.state !== 'windup') { e.ethCd = H.rand(5.5, 7.5); e.etherealT = 1.6; H.R.setGhost(e.model, true); H.R.burst(e.x, 1.4, e.z, 0x8fd8e8, 14, 3, 0.5, 0.4); }
 };
 G.updateEnemy = function (e, dt) {
   if (e.spawnK < 1) { e.spawnK = Math.min(1, e.spawnK + dt * 4); H.R.animateEnemy(e.model, e, dt); return; }
@@ -1683,7 +1679,7 @@ G.noStamina = (p, i) => { G.emit('deny', { p, slot: i, why: 'stamina' }); H.audi
 /* Thrown weapons (Axe Throw): fly to a target, bounce to the nearest foe not hit yet, then return to the thrower. */
 G.flyers = [];
 G.clearFlyers = function () {
-  for (const f of G.flyers || []) { H.R.removeMesh(f.mesh); if (f.p && f.p.model && f.p.model.sword) f.p.model.sword.visible = true; if (f.p) f.p.throwing = null; }
+  for (const f of G.flyers || []) { H.R.removeMesh(f.mesh); if (f.p) { f.p.throwing = null; if (f.p.model) H.R.syncHeroWeapon(f.p.model, f.p); } }
   G.flyers = [];
 };
 G.updateFlyers = function (dt) {
@@ -1696,7 +1692,7 @@ G.updateFlyers = function (dt) {
     if (Math.random() < 0.7) H.R.emit(f.x, f.y, f.z, 0, 0.2, 0, 0.25, 0.25, 0, 0xe8ecf2, 0.8, 0, 2);
     if (d > step + 0.3) { f.x += dx / d * step; f.z += dz / d * step; continue; }
     f.x = tx; f.z = tz;
-    if (f.back || p.dead) { H.R.removeMesh(f.mesh); G.flyers.splice(i, 1); if (p.model.sword) p.model.sword.visible = true; p.throwing = null; H.audio.play('axe_hit'); continue; }
+    if (f.back || p.dead) { H.R.removeMesh(f.mesh); G.flyers.splice(i, 1); p.throwing = null; H.R.syncHeroWeapon(p.model, p); H.audio.play('axe_hit'); continue; }
     if (f.tgt && !f.tgt.dead) {
       const e = f.tgt; f.hit.add(e); const [kx, kz] = H.norm(dx || 0.01, dz);
       G.damage(e, f.st.dmg, hitOpts(p, f.def, f.st, { kx, kz, knock: 4, phys: true, interrupt: true }));

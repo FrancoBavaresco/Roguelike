@@ -1083,9 +1083,37 @@ R.animateSword = function (m, p, dt) {
   else if (on && m.swing === 'cleave') { const wind = t < 0.3 ? t / 0.3 : 1, cut = t < 0.3 ? 0 : Math.min(1, (t - 0.3) / 0.22), ce = cut * cut * (3 - 2 * cut); oy = -1.7 * wind + 2.9 * ce; ix = -0.5 * wind - 0.95 * ce - (1 - wind) * 0.75; }
   sw.rotation.set(ox, oy, 0); inner.rotation.x = ix;
 };
+/* ---- View operations the game asks for (the game never writes model fields directly) ---- */
+R.setModelVisible = function (m, v) { if (m && m.root) m.root.visible = v; };
+// a thrown weapon leaves the hand: the hero's held weapon follows p.throwing
+R.syncHeroWeapon = function (m, p) { if (m && m.sword) m.sword.visible = !p.throwing; };
+// read the game's animation state (p.anim) into the model's own animation timers
+R.readHeroAnim = function (m, p) {
+  const A = p.anim; if (!A) return;
+  if (m._castN === undefined) { m._castN = A.castN; m._swingN = A.swingN; m._twirlN = A.twirlN; m._el = A.el; } // a fresh model starts in sync, without replaying old events
+  if (A.castN !== m._castN) { m._castN = A.castN; m.castT = 1; }
+  m.castSide = A.castSide;
+  if (A.swingN !== m._swingN) { m._swingN = A.swingN; m.swing = A.swing; m.swingT = 1; }
+  if (A.twirlN !== m._twirlN) { m._twirlN = A.twirlN; m.twirlT = 0.26; m.swingT = 0; }
+  m.chargeK = A.chargeK;
+  if (A.el !== m._el) { m._el = A.el; if (A.el) R.setRogueElement(m, A.el); }
+  R.syncHeroWeapon(m, p);
+};
+// how long a dead enemy should stay for its death clip (procedural models: 0)
+R.enemyDeathHold = function (m) { if (m && m.anim && m.anim.actions.death) { if (m.mark) m.mark.visible = false; return 0.9; } return 0; };
+// what the corpse looks like right after dying: hidden, or kept for the fall into a pit
+R.enemyDeathVisual = function (m, plunge) { if (m && m.root) m.root.visible = !!plunge; };
+R.animateDying = function (m, e, dt) { if (m && m.anim) R.animateEnemy(m, e, dt); };
+// spirits turning ethereal: see-through copies of the model's own materials
+R.setGhost = function (m, on) {
+  if (!m || !m.root) return;
+  if (!m._ghostMats) { m._ghostMats = []; m.root.traverse(o => { if (o.isMesh && o.material && !Array.isArray(o.material)) { o.material = o.material.clone(); m._ghostMats.push([o.material, o.material.opacity, o.material.transparent]); } }); }
+  for (const [mt, op, tr] of m._ghostMats) { mt.transparent = on ? true : tr; mt.opacity = on ? Math.min(op, 0.28) : op; mt.needsUpdate = true; }
+};
 const _q = { a: null, b: null, up: null };
 R.animateRogue = function (m, p, dt) {
   const THREE = T3();
+  R.readHeroAnim(m, p);
   m.t += dt;
   const speed = Math.hypot(p.vx, p.vz);
   const moving = speed > 0.5;
