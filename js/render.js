@@ -4,6 +4,18 @@ const R = H.R = { ready: false, t: 0 };
 /* Cosmetic randomness for animation (sparks, wobble) has its own generator, so how often the view
    animates can never change the game's random outcomes (drops, AI choices, revives...). */
 R.vrand = (() => { let s = 0x9e3779b9; return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; })();
+// Scenery randomness has its own generator, seeded from the room's layout: building a room never draws
+// from Math.random (the game's own randomness), and the same room always looks the same.
+R.mulberry = seed => { let s = seed | 0; return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
+R.drand = R.mulberry(0x51ed27);
+R.drandRange = (a, b) => a + R.drand() * (b - a);
+R.decorRng = function (room) {
+  let h = 2166136261; const mix = v => { h ^= Math.round(v * 100) | 0; h = Math.imul(h, 16777619); };
+  const b = room.bounds; mix(b.minX); mix(b.maxX); mix(b.minZ); mix(b.maxZ);
+  for (const p of room.pillars || []) { mix(p.x); mix(p.z); mix(p.r); } for (const p of room.pits || []) { mix(p.x); mix(p.z); mix(p.r); }
+  for (const d of room.doors || []) mix(d.x);
+  return R.mulberry(h);
+};
 const T3 = () => window.THREE;
 
 R.init = function (canvas) {
@@ -54,6 +66,7 @@ R.applyQuality = function () {
   const dpr = Math.min(window.devicePixelRatio || 1, q === 'high' ? 2 : q === 'medium' ? 1.5 : 1);
   R.renderer.setPixelRatio(q === 'low' ? Math.min(dpr, 0.85) : dpr);
   R.renderer.shadowMap.enabled = q === 'high';
+  if (R._blobMat) R._blobMat.visible = q !== 'high';
   R.key.castShadow = q === 'high';
   R.maxParticles = q === 'low' ? 1400 : q === 'medium' ? 2600 : 4000;
   R.resize();
@@ -170,13 +183,35 @@ R.ring = function (x, z, color, r0, r1, dur, y = 0.08, opacity = 0.9, width = 0.
 };
 /* A flat slash arc on the ground: a sector in front of (x,z) facing game angle `a` (dir = sin a, cos a).
    It wipes open across the arc, then fades. */
+R.arcMaterial = function () {
+  const THREE = T3();
+  return new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color() }, uOpacity: { value: 0.85 }, uR0: { value: 0.5 }, uStart: { value: 0 }, uLen: { value: 0.01 } },
+    vertexShader: 'varying vec2 vP; void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    // same radial profile as the old canvas texture (bright rim, soft inside), cut to the swept sector
+    fragmentShader: `uniform vec3 uColor; uniform float uOpacity, uR0, uStart, uLen; varying vec2 vP;
+      float prof(float r) { if (r < 0.5) return 0.0; if (r < 0.8) return mix(0.0, 0.22, (r - 0.5) / 0.3); if (r < 0.93) return mix(0.22, 0.75, (r - 0.8) / 0.13);
+        if (r < 0.985) return mix(0.75, 1.0, (r - 0.93) / 0.055); return mix(1.0, 0.0, clamp((r - 0.985) / 0.015, 0.0, 1.0)); }
+      void main() {
+        float r = length(vP); if (r > 1.0 || r < uR0) discard;
+        float d = mod(atan(vP.y, vP.x) - uStart, 6.2831853); if (d > uLen) discard;
+        gl_FragColor = vec4(uColor, prof(r) * uOpacity);
+        #include <tonemapping_fragment>
+        #include <encodings_fragment>
+      }`,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+  });
+};
+/* A flat slash arc on the ground: a sector in front of (x,z) facing game angle `a` (dir = sin a, cos a).
+   It wipes open across the arc, then fades. Meshes are pooled and the sweep happens in the shader,
+   so no geometry is built while it plays. */
 R.slashArc = function (x, z, a, half, r0, r1, color, dur = 0.32, y = 0.12) {
   const THREE = T3();
-  if (!R.texSlash) { const cv = document.createElement('canvas'); cv.width = cv.height = 128; const g = cv.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, 'rgba(255,255,255,0)'); gr.addColorStop(0.8, 'rgba(255,255,255,0.22)'); gr.addColorStop(0.93, 'rgba(255,255,255,0.75)'); gr.addColorStop(0.985, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); R.texSlash = new THREE.CanvasTexture(cv); }
-  const mat = new THREE.MeshBasicMaterial({ color, map: R.texSlash, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-  const m = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 28, 1, a - Math.PI / 2 - half, 0.01), mat);
-  m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); R.fx.add(m);
-  R.arcs.push({ m, t: 0, dur, a, half, r0, r1, wipe: Math.min(0.12, dur * 0.35) });
+  let m = (R.arcPool || (R.arcPool = [])).pop();
+  if (!m) { R.arcGeo = R.arcGeo || new THREE.PlaneGeometry(2, 2); R.arcGeo.shared = true; m = new THREE.Mesh(R.arcGeo, R.arcMaterial()); m.rotation.x = -Math.PI / 2; m.frustumCulled = false; R.fx.add(m); }
+  const u = m.material.uniforms; u.uColor.value.setHex(color); u.uOpacity.value = 0.85; u.uR0.value = r0 / r1; u.uStart.value = a - Math.PI / 2 - half; u.uLen.value = 0.01;
+  m.position.set(x, y, z); m.scale.setScalar(r1); m.visible = true;
+  R.arcs.push({ m, t: 0, dur, a, half, r0, r1, wipe: Math.min(0.12, dur * 0.35), pooled: true });
 };
 /* Flat arrow on the floor from (x,z) toward game angle a (dir = sin a, cos a), `len` long. Fades out. */
 R.groundArrow = function (x, z, a, len, w, color, dur = 0.5) {
@@ -236,9 +271,10 @@ R.updateFx = function (dt) {
   for (let i = R.arcs.length - 1; i >= 0; i--) {
     const c = R.arcs[i]; c.t += dt; const THREE = T3();
     if (c.arrow) { const k = c.t / c.dur; c.mat.opacity = 0.7 * (k < 0.15 ? k / 0.15 : 1 - (k - 0.15) / 0.85); if (c.t >= c.dur) { R.fx.remove(c.m); c.m.children[0].geometry.dispose(); c.mat.dispose(); R.arcs.splice(i, 1); } continue; }
-    if (c.t < c.wipe + dt) { const k = Math.min(1, c.t / c.wipe); c.m.geometry.dispose(); c.m.geometry = new THREE.RingGeometry(c.r0, c.r1, 28, 1, c.a - Math.PI / 2 - c.half, Math.max(0.01, 2 * c.half * k)); }
-    const f = Math.max(0, (c.t - c.wipe) / (c.dur - c.wipe)); c.m.material.opacity = 0.85 * (1 - f); c.m.scale.setScalar(1 + 0.08 * f);
-    if (c.t >= c.dur) { R.fx.remove(c.m); c.m.geometry.dispose(); c.m.material.dispose(); R.arcs.splice(i, 1); }
+    const u = c.m.material.uniforms;
+    if (c.t < c.wipe + dt) u.uLen.value = Math.max(0.01, 2 * c.half * Math.min(1, c.t / c.wipe));
+    const f = Math.max(0, (c.t - c.wipe) / (c.dur - c.wipe)); u.uOpacity.value = 0.85 * (1 - f); c.m.scale.setScalar(c.r1 * (1 + 0.08 * f));
+    if (c.t >= c.dur) { c.m.visible = false; R.arcPool.push(c.m); R.arcs.splice(i, 1); }
   }
   for (let i = R.bolts.length - 1; i >= 0; i--) { const b = R.bolts[i]; b.t += dt; b.m.material.opacity = 1 - b.t / b.dur; if (b.t >= b.dur) { R.fx.remove(b.m); b.m.geometry.dispose(); b.m.material.dispose(); R.bolts.splice(i, 1); } }
   for (let i = R.decals.length - 1; i >= 0; i--) { const d = R.decals[i]; d.t += dt; d.m.material.opacity = Math.min(1, (1 - d.t / d.dur) * 2) * 0.7; if (d.t >= d.dur) { R.fx.remove(d.m); d.m.geometry.dispose(); d.m.material.dispose(); R.decals.splice(i, 1); } }
@@ -382,7 +418,7 @@ R.wallMaterial = function (tint) {
 R.buildChamber = function (room, theme) {
   const THREE = T3();
   R.clearChamber();
-  R.theme = theme;
+  R.theme = theme; R.drand = R.decorRng(room);
   R.scene.background.setHex(theme.fog); R.scene.fog.color.setHex(theme.fog);
   R.hemi.color.setHex(theme.light);
   const b = room.bounds;
@@ -398,60 +434,70 @@ R.buildChamber = function (room, theme) {
   // soft dark vignette toward the walls so the room edge reads without a hard grid
   const vg = new THREE.Mesh(new THREE.PlaneGeometry(W + 4.4, D + 4.4), new THREE.MeshBasicMaterial({ map: R.texVignette || (R.texVignette = R.canvasTex(256, 256, c => { const g = c.createRadialGradient(128, 128, 60, 128, 128, 182); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.75)'); c.fillStyle = g; c.fillRect(0, 0, 256, 256); })), transparent: true, depthWrite: false }));
   vg.rotation.x = -Math.PI / 2; vg.position.set((b.minX + b.maxX) / 2, 0.012, (b.minZ + b.maxZ) / 2); R.chamber.add(vg);
+  // a soft pool of the depth's light in the middle of the floor: the fight area reads brighter than the edges
+  if (H.settings.look !== 'classic') {
+    const pool = new THREE.Mesh(new THREE.PlaneGeometry(W * 1.1, D * 1.1), new THREE.MeshBasicMaterial({ map: R.texPool || (R.texPool = R.canvasTex(256, 256, c => { const g = c.createRadialGradient(128, 128, 0, 128, 128, 128); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.55, 'rgba(255,255,255,.45)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 256, 256); })), color: theme.light, transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false }));
+    pool.rotation.x = -Math.PI / 2; pool.position.set((b.minX + b.maxX) / 2, 0.014, (b.minZ + b.maxZ) / 2); R.chamber.add(pool);
+  }
   // pit walls (short brick collars going down)
   for (const p of room.pits) { const col = new THREE.Mesh(new THREE.CylinderGeometry(p.r + 0.05, p.r + 0.05, 1.2, 32, 1, true), R.std(0x1a181c, { side: THREE.BackSide, roughness: 1 })); col.position.set(p.x, -0.6, p.z); R.chamber.add(col); }
   // rune circles on floor
   for (let k = 0; k < 3; k++) {
-    const r = 1.5 + Math.random() * 2.5; const x = H.rand(b.minX + 3, b.maxX - 3), z = H.rand(b.minZ + 3, b.maxZ - 3);
+    const r = 1.5 + R.drand() * 2.5; const x = R.drandRange(b.minX + 3, b.maxX - 3), z = R.drandRange(b.minZ + 3, b.maxZ - 3);
     const m = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: R.texRune, color: theme.rune, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending }));
-    m.rotation.x = -Math.PI / 2; m.rotation.z = Math.random() * 6; m.position.set(x, 0.03, z); R.chamber.add(m);
+    m.rotation.x = -Math.PI / 2; m.rotation.z = R.drand() * 6; m.position.set(x, 0.03, z); R.chamber.add(m);
   }
   // walls
   const wallMat = R.wallMaterial(new THREE.Color(0xffffff).lerp(new THREE.Color(theme.light), 0.1).multiplyScalar(0.5));
   const runeMat = R.basic(theme.rune);
-  const addBlock = (x, z, w, h, d, low, east) => {
+  const wallTops = [];
+  const addBlock = (x, z, w, h, d, low, east, side) => {
+    if (!low && side) wallTops.push({ x, z, w, d, top: h - 0.3, side });
     const m = new THREE.Mesh(R.boxUV(w, h, d, 0.5), wallMat); m.position.set(x, h / 2 - 0.3, z); m.castShadow = !low; m.receiveShadow = true; R.chamber.add(m);
     if (east) { m.userData.eastWall = true; m.userData.h = h; }
-    if (!low && Math.random() < 0.35) { const s = new THREE.Mesh(new THREE.BoxGeometry(w * 0.6, 0.08, d * 1.02), runeMat); s.position.set(x, h * (0.3 + Math.random() * 0.5), z); R.chamber.add(s); if (east) { s.userData.eastWall = true; s.userData.rune = true; } }
+    if (!low && R.drand() < 0.35) { const s = new THREE.Mesh(new THREE.BoxGeometry(w * 0.6, 0.08, d * 1.02), runeMat); s.position.set(x, h * (0.3 + R.drand() * 0.5), z); R.chamber.add(s); if (east) { s.userData.eastWall = true; s.userData.rune = true; } }
   };
   const doorXs = room.doors.map(d => d.x);
   for (let x = b.minX - 1; x <= b.maxX + 1; x += 2) {
     const nearDoor = doorXs.some(dx => Math.abs(dx - x) < 2.2);
-    if (!nearDoor) addBlock(x, b.minZ - 1, 2, 3 + Math.random() * 2.5, 2);
+    if (!nearDoor) addBlock(x, b.minZ - 1, 2, 3 + R.drand() * 2.5, 2, false, false, 'n');
     else addBlock(x, b.minZ - 1.6, 2, 0.5, 0.8, true);
     addBlock(x, b.maxZ + 1, 2, 0.5, 2, true);
   }
-  for (let z = b.minZ - 1; z <= b.maxZ + 1; z += 2) { addBlock(b.minX - 1, z, 2, 2.4 + Math.random() * 2 * (1 - (z - b.minZ) / D), 2); addBlock(b.maxX + 1, z, 2, 2.4 + Math.random() * 2 * (1 - (z - b.minZ) / D), 2, false, true); }
+  for (let z = b.minZ - 1; z <= b.maxZ + 1; z += 2) { addBlock(b.minX - 1, z, 2, 2.4 + R.drand() * 2 * (1 - (z - b.minZ) / D), 2, false, false, 'w'); addBlock(b.maxX + 1, z, 2, 2.4 + R.drand() * 2 * (1 - (z - b.minZ) / D), 2, false, true); }
   // pillars: stacks of big, solid stone blocks
   if (!R.blockTex) {
     const N = 256; const cv = document.createElement('canvas'); cv.width = cv.height = N; const c = cv.getContext('2d');
     c.fillStyle = '#7a7680'; c.fillRect(0, 0, N, N);
-    for (let q = 0; q < 1400; q++) { const g = 90 + Math.random() * 70 | 0; c.fillStyle = `rgba(${g},${g - 2},${g + 4},${0.15 + Math.random() * 0.25})`; const r = 1 + Math.random() * 5; c.beginPath(); c.arc(Math.random() * N, Math.random() * N, r, 0, 7); c.fill(); }
-    for (let q = 0; q < 6; q++) { c.strokeStyle = 'rgba(30,26,34,.55)'; c.lineWidth = 1 + Math.random(); c.beginPath(); let x = Math.random() * N, y = Math.random() * N; c.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (Math.random() - .5) * 40; y += (Math.random() - .5) * 40; c.lineTo(x, y); } c.stroke(); }
+    for (let q = 0; q < 1400; q++) { const g = 90 + R.drand() * 70 | 0; c.fillStyle = `rgba(${g},${g - 2},${g + 4},${0.15 + R.drand() * 0.25})`; const r = 1 + R.drand() * 5; c.beginPath(); c.arc(R.drand() * N, R.drand() * N, r, 0, 7); c.fill(); }
+    for (let q = 0; q < 6; q++) { c.strokeStyle = 'rgba(30,26,34,.55)'; c.lineWidth = 1 + R.drand(); c.beginPath(); let x = R.drand() * N, y = R.drand() * N; c.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (R.drand() - .5) * 40; y += (R.drand() - .5) * 40; c.lineTo(x, y); } c.stroke(); }
     const eg = c.createLinearGradient(0, 0, 0, N); eg.addColorStop(0, 'rgba(255,255,255,.12)'); eg.addColorStop(.08, 'rgba(255,255,255,0)'); eg.addColorStop(.9, 'rgba(0,0,0,0)'); eg.addColorStop(1, 'rgba(0,0,0,.35)'); c.fillStyle = eg; c.fillRect(0, 0, N, N);
     const eg2 = c.createLinearGradient(0, 0, N, 0); eg2.addColorStop(0, 'rgba(0,0,0,.25)'); eg2.addColorStop(.07, 'rgba(0,0,0,0)'); eg2.addColorStop(.93, 'rgba(0,0,0,0)'); eg2.addColorStop(1, 'rgba(0,0,0,.25)'); c.fillStyle = eg2; c.fillRect(0, 0, N, N);
     R.blockTex = new THREE.CanvasTexture(cv); R.blockTex.encoding = THREE.sRGBEncoding;
   }
   const stoneTint = new THREE.Color(0xffffff).lerp(new THREE.Color(theme.light), 0.12).multiplyScalar(0.72);
-  const blockMats = [0.85, 0.95, 1.05].map(k => new THREE.MeshStandardMaterial({ map: R.blockTex, color: stoneTint.clone().multiplyScalar(k), roughness: 0.95, metalness: 0 }));
+  const blockMats = [0.95, 1.05, 1.15].map(k => new THREE.MeshStandardMaterial({ map: R.blockTex, color: stoneTint.clone().multiplyScalar(k), roughness: 0.95, metalness: 0, flatShading: true }));
+  // pillars: stacked octagonal stone drums. The drums sit on the collision circle (flat faces just
+  // inside, corners just outside), so what you see is what blocks you; only the capstone, above head
+  // height, overhangs.
+  const oct = rr => rr / ((1 + Math.cos(Math.PI / 8)) / 2);   // circumradius whose mean edge sits at rr
   for (const p of room.pillars) {
     const g = new THREE.Group();
-    const h = 3.4 + Math.random() * 1.4, w = p.r * 1.8;
-    // wide plinth, then 3–4 drums of slightly varying size, a capstone on top
-    const plinth = new THREE.Mesh(new THREE.BoxGeometry(w * 1.3, 0.45, w * 1.3), blockMats[0]); plinth.position.y = -0.08; plinth.castShadow = plinth.receiveShadow = true; g.add(plinth);
-    let y = 0.15; const n = 3 + (Math.random() < 0.5 ? 1 : 0); const bh = (h - 0.9) / n;
+    const h = 3.4 + R.drand() * 1.4;
+    const plinth = new THREE.Mesh(new THREE.CylinderGeometry(oct(p.r * 1.0), oct(p.r * 1.02), 0.4, 8), blockMats[0]); plinth.position.y = -0.1; plinth.castShadow = plinth.receiveShadow = true; g.add(plinth);
+    let y = 0.1; const n = 3 + (R.drand() < 0.5 ? 1 : 0); const bh = (h - 0.8) / n;
     for (let k = 0; k < n; k++) {
-      const ww = w * (0.94 + Math.random() * 0.1), hh = bh - 0.05;
-      const b = new THREE.Mesh(new THREE.BoxGeometry(ww, hh, ww * (0.94 + Math.random() * 0.1)), blockMats[(k + 1) % 3]);
-      b.position.set((Math.random() - .5) * 0.06, y + hh / 2, (Math.random() - .5) * 0.06); b.rotation.y = (Math.random() - .5) * 0.12;
+      const rr = p.r * (0.96 + R.drand() * 0.04), hh = bh - 0.05;
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(oct(rr), oct(rr), hh, 8), blockMats[(k + 1) % 3]);
+      b.position.set(0, y + hh / 2, 0); b.rotation.y = (R.drand() - .5) * 0.2;
       b.castShadow = b.receiveShadow = true; g.add(b); y += bh;
-      // chipped corner on some blocks
-      if (Math.random() < 0.4) { const chip = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), R.basic(0x0e0c12)); chip.position.set(b.position.x + ww / 2 - 0.05, b.position.y + hh / 2 - 0.05, b.position.z - ww / 2 + 0.05); chip.rotation.set(0.6, 0.7, 0); g.add(chip); }
+      // chipped edge on some drums
+      if (R.drand() < 0.4) { const ca = R.drand() * Math.PI * 2; const chip = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), R.basic(0x0e0c12)); chip.position.set(Math.cos(ca) * rr * 0.86, b.position.y + hh / 2 - 0.05, Math.sin(ca) * rr * 0.86); chip.rotation.set(0.6, 0.7, 0); g.add(chip); }
     }
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(w * 1.22, 0.5, w * 1.22), blockMats[2]); cap.position.y = y + 0.25; cap.castShadow = true; g.add(cap);
-    // faint rune seam between two blocks
-    const band = new THREE.Mesh(new THREE.BoxGeometry(w * 1.0, 0.06, w * 1.0), runeMat); band.position.y = 0.15 + bh * (1 + (Math.random() < .5 ? 1 : 0)) - 0.025; band.scale.set(1.01, 1, 1.01); g.add(band);
-    g.rotation.y = Math.random() * Math.PI / 2;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(oct(p.r * 1.16), oct(p.r * 1.02), 0.5, 8), blockMats[2]); cap.position.y = y + 0.25; cap.castShadow = true; g.add(cap);
+    // faint rune seam between two drums
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(oct(p.r * 0.985), oct(p.r * 0.985), 0.06, 8), runeMat); band.position.y = 0.1 + bh * (1 + (R.drand() < .5 ? 1 : 0)) - 0.025; g.add(band);
+    g.rotation.y = R.drand() * Math.PI / 4;
     g.position.set(p.x, 0, p.z); R.chamber.add(g); g.userData = { pillar: true, x: p.x, z: p.z, r: p.r, h, fade: 1 };
   }
   // pits
@@ -477,14 +523,17 @@ R.buildChamber = function (room, theme) {
     g.position.set(p[0], 0, p[1]); R.chamber.add(g);
     let light = null;
     if (i < 2 && H.settings.quality !== 'low') { light = R.brazierLights[i]; light.color.setHex(theme.rune); light.intensity = 1.2; light.position.set(p[0], 1.8, p[1]); }
-    R.braziers.push({ x: p[0], z: p[1], fl, light, ph: Math.random() * 7 });
+    R.braziers.push({ x: p[0], z: p[1], fl, light, ph: R.drand() * 7 });
   });
   // doors
   for (const d of room.doors) R.buildDoor(d, theme);
   // prop
   if (room.prop) R.buildProp(room.prop, theme);
-  // key light/shadow fits room
+  // scenery kit for this depth: wall tops, wall faces, flat scatter by the walls (nothing that blocks)
+  if (H.settings.look !== 'classic') R.buildDecor(room, theme, wallTops, doorXs);
+  // key light/shadow fits room: the shadow camera covers just this room, so its texels stay sharp
   R.key.position.set(b.minX + W * 0.3, 18, b.minZ + D * 0.7); R.key.target.position.set((b.minX + b.maxX) / 2, 0, (b.minZ + b.maxZ) / 2);
+  { const sc = R.key.shadow.camera, ext = Math.hypot(W, D) / 2 + 3; sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.updateProjectionMatrix(); }
   if (R.rim) R.rim.intensity = H.settings.look === 'classic' ? 0 : 0.45;
   R.applyWallCut();
 };
@@ -492,10 +541,10 @@ R.makeWoodTexture = function () {
   const W = 256, Hh = 512; const cv = document.createElement('canvas'); cv.width = W; cv.height = Hh; const c = cv.getContext('2d');
   const planks = 4, pw = W / planks;
   for (let k = 0; k < planks; k++) {
-    const base = [96 + Math.random() * 22, 64 + Math.random() * 14, 40 + Math.random() * 10].map(v => v | 0);
+    const base = [96 + R.drand() * 22, 64 + R.drand() * 14, 40 + R.drand() * 10].map(v => v | 0);
     c.fillStyle = `rgb(${base})`; c.fillRect(k * pw, 0, pw, Hh);
-    for (let q = 0; q < 26; q++) { const x = k * pw + Math.random() * pw; c.strokeStyle = `rgba(${Math.random() < .5 ? '40,24,12' : '150,110,70'},${0.15 + Math.random() * 0.25})`; c.lineWidth = 0.6 + Math.random() * 1.6; c.beginPath(); c.moveTo(x, 0); let xx = x; for (let y = 0; y <= Hh; y += 16) { xx += (Math.random() - .5) * 1.6; c.lineTo(Math.max(k * pw + 1, Math.min((k + 1) * pw - 1, xx)), y); } c.stroke(); }
-    for (let q = 0; q < 2; q++) if (Math.random() < .7) { const kx = k * pw + pw * (0.25 + Math.random() * .5), ky = Math.random() * Hh; c.fillStyle = 'rgba(45,26,14,.75)'; c.beginPath(); c.ellipse(kx, ky, 4 + Math.random() * 3, 8 + Math.random() * 6, 0, 0, 7); c.fill(); c.strokeStyle = 'rgba(45,26,14,.35)'; c.beginPath(); c.ellipse(kx, ky, 9, 18, 0, 0, 7); c.stroke(); }
+    for (let q = 0; q < 26; q++) { const x = k * pw + R.drand() * pw; c.strokeStyle = `rgba(${R.drand() < .5 ? '40,24,12' : '150,110,70'},${0.15 + R.drand() * 0.25})`; c.lineWidth = 0.6 + R.drand() * 1.6; c.beginPath(); c.moveTo(x, 0); let xx = x; for (let y = 0; y <= Hh; y += 16) { xx += (R.drand() - .5) * 1.6; c.lineTo(Math.max(k * pw + 1, Math.min((k + 1) * pw - 1, xx)), y); } c.stroke(); }
+    for (let q = 0; q < 2; q++) if (R.drand() < .7) { const kx = k * pw + pw * (0.25 + R.drand() * .5), ky = R.drand() * Hh; c.fillStyle = 'rgba(45,26,14,.75)'; c.beginPath(); c.ellipse(kx, ky, 4 + R.drand() * 3, 8 + R.drand() * 6, 0, 0, 7); c.fill(); c.strokeStyle = 'rgba(45,26,14,.35)'; c.beginPath(); c.ellipse(kx, ky, 9, 18, 0, 0, 7); c.stroke(); }
     c.fillStyle = 'rgba(20,10,4,.85)'; c.fillRect(k * pw, 0, 3, Hh); c.fillStyle = 'rgba(255,220,170,.08)'; c.fillRect(k * pw + 3, 0, 2, Hh);
   }
   const g = c.createLinearGradient(0, 0, 0, Hh); g.addColorStop(0, 'rgba(0,0,0,.1)'); g.addColorStop(0.85, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(10,6,2,.45)'); c.fillStyle = g; c.fillRect(0, 0, W, Hh);
@@ -548,7 +597,7 @@ R.buildProp = function (prop, theme) {
   let glowColor = 0xffffff;
   if (k === 'altar') {
     const slab = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1, 1.2), stone); slab.position.y = 0.4; g.add(slab);
-    for (let i = 0; i < 5; i++) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.3 + Math.random() * 0.3, 5), R.std(0xe8dcc0)); c.position.set(-0.8 + i * 0.4, 1.05, (Math.random() - .5) * 0.6); g.add(c); const f = R.glowSprite(0xff3d5e, 0.5); f.position.set(c.position.x, 1.35, c.position.z); g.add(f); }
+    for (let i = 0; i < 5; i++) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.3 + R.drand() * 0.3, 5), R.std(0xe8dcc0)); c.position.set(-0.8 + i * 0.4, 1.05, (R.drand() - .5) * 0.6); g.add(c); const f = R.glowSprite(0xff3d5e, 0.5); f.position.set(c.position.x, 1.35, c.position.z); g.add(f); }
     glowColor = 0xff3d5e;
   } else if (k === 'hearth') {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.3, 5, 8), stone); ring.rotation.x = Math.PI / 2; ring.position.y = 0.15; g.add(ring);
@@ -605,6 +654,84 @@ R.buildProp = function (prop, theme) {
   R.toonify(g, prop, { outline: false });
   g.position.set(prop.x, 0, prop.z); R.chamber.add(g);
   prop.g = g; prop.glow = glow; prop.glowColor = glowColor; R.props.push(prop);
+};
+/* ---- Scenery kits ----
+   Static dressing per depth, merged into one mesh per material so a room adds a handful of draw calls.
+   It sits on wall tops, hangs on the north and west wall faces (the ones the isometric camera sees) or
+   lies flat on the floor by the walls: nothing stands where it could be mistaken for an obstacle. */
+R.mergeGeos = function (list) {
+  const THREE = T3(); let n = 0;
+  const parts = list.map(({ geo, mx }) => { const g = geo.index ? geo.toNonIndexed() : geo.clone(); geo.dispose(); g.applyMatrix4(mx); n += g.attributes.position.count; return g; });
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3); let o = 0;
+  for (const g of parts) { pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); o += g.attributes.position.count; g.dispose(); }
+  const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); return out;
+};
+R.buildDecor = function (room, theme, wallTops, doorXs) {
+  const THREE = T3(), rnd = R.drand, b = room.bounds;
+  const depth = Math.max(1, H.DEPTHS.indexOf(theme));
+  const buckets = {};
+  const mats = {
+    stone: () => R.std(new THREE.Color(theme.stone).multiplyScalar(1.6).getHex(), { roughness: 0.95 }),
+    bone: () => R.std(0xd9cfb8, { roughness: 0.8 }),
+    iron: () => R.std(0x3a363e, { roughness: 0.5, metalness: 0.4 }),
+    clay: () => R.std(0x8a4a2c, { roughness: 0.9 }),
+    slag: () => R.std(0x241c1a, { roughness: 1 }),
+    cloth: () => R.std(new THREE.Color(theme.rune).multiplyScalar(0.45).getHex(), { roughness: 1, side: THREE.DoubleSide }),
+    glow: () => R.basic(theme.rune),
+    ember: () => R.basic(0xff7a2e),
+    patch: () => new THREE.MeshBasicMaterial({ color: depth === 2 ? 0x0a0807 : depth === 3 ? 0x05080c : 0x6a5a30, transparent: true, opacity: depth === 1 ? 0.22 : 0.4, depthWrite: false })
+  };
+  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
+  const put = (key, geo, x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) => {
+    _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, rz)), _s.set(sx, sy, sz));
+    (buckets[key] || (buckets[key] = [])).push({ geo, mx: _m.clone() });
+  };
+  const nearDoor = x => doorXs.some(dx => Math.abs(dx - x) < 2.6);
+  // ---- pieces ----
+  const skull = (x, y, z, ry) => { put('bone', new THREE.SphereGeometry(0.14, 7, 5), x, y + 0.12, z, 0, ry, 0, 1, 0.9, 1.1); put('slag', new THREE.BoxGeometry(0.05, 0.05, 0.03), x + Math.cos(ry) * 0.05, y + 0.14, z - 0.13, 0, ry); put('slag', new THREE.BoxGeometry(0.05, 0.05, 0.03), x - Math.cos(ry) * 0.05, y + 0.14, z - 0.13, 0, ry); };
+  const boneBit = (x, z) => put('bone', new THREE.CylinderGeometry(0.03, 0.035, 0.3 + rnd() * 0.25, 5), x, 0.035, z, Math.PI / 2, rnd() * 6.28, 0);
+  const chain = (x, z, y0, len, ry) => { const n = Math.round(len / 0.11); for (let k = 0; k < n; k++) put('iron', new THREE.TorusGeometry(0.055, 0.017, 4, 8), x, y0 - k * 0.11, z, 0, ry + (k % 2 ? Math.PI / 2 : 0), 0, 1, 1.35, 1); put('iron', new THREE.TorusGeometry(0.13, 0.025, 4, 10), x, y0 - n * 0.11 - 0.1, z, 0, ry, 0); };
+  const rock = (key, x, y, z, s) => put(key, new THREE.DodecahedronGeometry(s, 0), x, y + s * 0.6, z, rnd() * 3, rnd() * 3, rnd() * 3, 1, 0.7 + rnd() * 0.4, 1);
+  const jar = (x, y, z, s) => { const pts = [[0, 0], [0.16, 0.02], [0.22, 0.2], [0.19, 0.38], [0.09, 0.46], [0.1, 0.52]].map(([a, c]) => new THREE.Vector2(a * s, c * s)); put('clay', new THREE.LatheGeometry(pts, 8), x, y, z); };
+  const patch = (x, z, r) => { const g = new THREE.CircleGeometry(r, 9); const pa = g.attributes.position; for (let k = 1; k < pa.count; k++) { const f = 0.7 + rnd() * 0.5; pa.setXY(k, pa.getX(k) * f, pa.getY(k) * f); } put('patch', g, x, 0.006, z, -Math.PI / 2, 0, rnd() * 6.28); };
+  const crystal = (x, y, z) => { for (let k = 0; k < 3 + (rnd() * 3 | 0); k++) put('glow', new THREE.ConeGeometry(0.07 + rnd() * 0.06, 0.4 + rnd() * 0.6, 5), x + (rnd() - .5) * 0.5, y + 0.2, z + (rnd() - .5) * 0.5, (rnd() - .5) * 0.7, 0, (rnd() - .5) * 0.7); };
+  const bust = (x, y, z, ry, fallen) => { put('stone', new THREE.BoxGeometry(0.5, 0.35, 0.5), x, y + 0.17, z, 0, ry); if (fallen) { put('stone', new THREE.BoxGeometry(0.45, 0.6, 0.3), x + 0.5, y + 0.15, z, 0, ry, Math.PI / 2); put('stone', new THREE.SphereGeometry(0.2, 7, 5), x + 0.9, y + 0.2, z + 0.3); } else { put('stone', new THREE.BoxGeometry(0.45, 0.6, 0.3), x, y + 0.65, z, 0, ry); put('stone', new THREE.SphereGeometry(0.2, 7, 5), x, y + 1.1, z); } };
+  const banner = (x, z, ry, top) => { const g = new THREE.PlaneGeometry(0.9, 2.0, 1, 4); const pa = g.attributes.position; for (let k = 0; k < pa.count; k++) if (pa.getY(k) < -0.9) pa.setY(k, pa.getY(k) + rnd() * 0.5); put('cloth', g, x, top - 1.1, z, 0, ry); put('iron', new THREE.CylinderGeometry(0.03, 0.03, 1.1, 5), x, top - 0.05, z, 0, ry, Math.PI / 2); };
+  const cage = (x, y, z) => { for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; put('iron', new THREE.CylinderGeometry(0.02, 0.02, 0.9, 4), x + Math.cos(a) * 0.3, y + 0.45, z + Math.sin(a) * 0.3); } put('iron', new THREE.TorusGeometry(0.3, 0.03, 4, 12), x, y + 0.9, z, Math.PI / 2); put('iron', new THREE.TorusGeometry(0.3, 0.03, 4, 12), x, y + 0.02, z, Math.PI / 2); };
+  // ---- wall tops ----
+  for (const t of wallTops) {
+    if (rnd() < 0.45) continue;
+    const x = t.x + (rnd() - .5) * t.w * 0.5, z = t.z + (rnd() - .5) * t.d * 0.5, y = t.top;
+    const k = rnd();
+    if (depth === 1) { if (k < 0.5) { const n = 2 + (rnd() * 4 | 0); for (let i = 0; i < n; i++) skull(x + (rnd() - .5) * 0.8, y, z + (rnd() - .5) * 0.8, rnd() * 6.28); } else if (k < 0.75) cage(x, y, z); else rock('stone', x, y, z, 0.3); }
+    else if (depth === 2) { if (k < 0.45) { for (let i = 0; i < 3; i++) rock('slag', x + (rnd() - .5) * 0.9, y, z + (rnd() - .5) * 0.9, 0.18 + rnd() * 0.2); for (let i = 0; i < 4; i++) put('ember', new THREE.BoxGeometry(0.08, 0.08, 0.08), x + (rnd() - .5) * 0.8, y + 0.12, z + (rnd() - .5) * 0.8, rnd() * 3, rnd() * 3); } else jar(x, y, z, 0.9 + rnd() * 0.6); }
+    else { if (k < 0.45) bust(x, y, z, rnd() * 6.28, rnd() < 0.4); else if (k < 0.8) crystal(x, y, z); else rock('stone', x, y, z, 0.3); }
+  }
+  // ---- wall faces (north and west) ----
+  const faces = [];
+  for (let x = b.minX + 1.5; x <= b.maxX - 1.5; x += 2.2) if (!nearDoor(x)) faces.push({ x, z: b.minZ + 0.1, ry: 0 });
+  for (let z = b.minZ + 1.5; z <= b.maxZ - 2.5; z += 2.2) faces.push({ x: b.minX + 0.1, z, ry: Math.PI / 2 });
+  for (const f of faces) {
+    if (rnd() < 0.6) continue;
+    if (depth === 1) chain(f.x, f.z, 2.6, 0.8 + rnd() * 0.9, f.ry);
+    else if (depth === 3) banner(f.x, f.z, f.ry, 2.9);
+    else put('ember', new THREE.BoxGeometry(0.5, 0.06, 0.04), f.x, 0.9 + rnd() * 1.2, f.z, 0, f.ry, (rnd() - .5) * 0.6);   // glowing cracks in the kiln brick
+  }
+  // ---- flat scatter by the walls (inside a 1.2 m band, never higher than a few centimetres) ----
+  const band = () => { const side = rnd() * 4 | 0, u = rnd(); const d = 0.3 + rnd() * 0.9;
+    if (side === 0) return [b.minX + 1 + u * (b.maxX - b.minX - 2), b.minZ + d]; if (side === 1) return [b.minX + d, b.minZ + 1 + u * (b.maxZ - b.minZ - 2)];
+    if (side === 2) return [b.maxX - d, b.minZ + 1 + u * (b.maxZ - b.minZ - 2)]; return [b.minX + 1 + u * (b.maxX - b.minX - 2), b.maxZ - d]; };
+  const clearOf = (x, z) => !room.pits.some(p => Math.hypot(p.x - x, p.z - z) < p.r + 0.8) && !room.doors.some(d => Math.abs(d.x - x) < 2) && !(room.prop && Math.hypot(room.prop.x - x, room.prop.z - z) < 2.5);
+  for (let i = 0; i < 14; i++) { const [x, z] = band(); if (!clearOf(x, z)) continue; if (depth === 1 && i % 2) boneBit(x, z); else patch(x, z, 0.4 + rnd() * 0.7); }
+  // ---- one mesh per material ----
+  const g = new THREE.Group(); g.userData.decor = true;
+  for (const [key, list] of Object.entries(buckets)) {
+    const mesh = new THREE.Mesh(R.mergeGeos(list), mats[key]()); mesh.castShadow = key !== 'patch' && key !== 'glow' && key !== 'ember'; mesh.receiveShadow = key !== 'patch';
+    if (key === 'patch') mesh.renderOrder = -1;
+    g.add(mesh);
+  }
+  R.toonify(g, null, { outline: false });
+  R.chamber.add(g); R.decor = g;
 };
 R.updateChamber = function (dt) {
   const t = R.t;
@@ -1739,4 +1866,22 @@ R.update = function (dt, gameDt) {
 R.render = function () { R.renderer.render(R.scene, R.camera); };
 
 /* Characters get the illustrated look as they are built (heroes, enemies, bosses, menu and inventory previews). */
-for (const k of ['makeHero', 'makeEnemy', 'makeBoss']) { const base = R[k]; R[k] = function () { const m = base.apply(R, arguments); R.toonify(m.root, m); return m; }; }
+for (const k of ['makeHero', 'makeEnemy', 'makeBoss']) { const base = R[k]; R[k] = function () { const m = base.apply(R, arguments); R.toonify(m.root, m); R.addBlob(m, k, arguments[0], arguments[1]); return m; }; }
+
+/* Contact shadows: a soft dark disc under every character, drawn only when real shadows are off
+   (medium and low quality), so figures stay grounded. One shared geometry and material. */
+R.blobMat = function () {
+  if (R._blobMat) return R._blobMat;
+  const THREE = T3();
+  const m = new THREE.MeshBasicMaterial({ map: R.canvasTex(64, 64, c => { const g = c.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(0,0,0,.65)'); g.addColorStop(0.6, 'rgba(0,0,0,.35)'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, 0, 64, 64); }), transparent: true, depthWrite: false, color: 0xffffff });
+  m.shared = true; m.visible = H.settings.quality !== 'high'; return (R._blobMat = m);
+};
+R.addBlob = function (m, kind, type, elite) {
+  if (!m || !m.root) return;
+  const THREE = T3();
+  if (!R._blobGeo) { R._blobGeo = new THREE.PlaneGeometry(2, 2); R._blobGeo.rotateX(-Math.PI / 2); R._blobGeo.shared = true; }
+  const def = kind === 'makeHero' ? { r: 0.5 } : (H.ENEMIES[type] || {});
+  const r = (def.r || 0.6) * (kind === 'makeBoss' ? 1.6 : 1.25) * (elite ? 1.3 : 1);
+  const b = new THREE.Mesh(R._blobGeo, R.blobMat()); b.scale.setScalar(r); b.position.y = 0.025; b.renderOrder = -1; b.userData.blob = true;
+  m.root.add(b); m.blob = b;
+};
