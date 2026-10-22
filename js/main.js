@@ -109,6 +109,7 @@
       // while paused / in a menu / in a modal nothing is buffered: presses there belong to the UI
       if (!G.active || G.paused || G.modal || UI.layers.length) for (const p of G.players) p._ibuf = null;
     } else if (UI.showcase) { UI.updateShowcase(dt); simDt = dt; }
+    if (G.active) H.views.sync(simDt); // models follow the simulation once per rendered frame
     H.R.update(dt, simDt);
     if (G.run && !$('#hud').hidden) UI.updateHud(dt);
     if (doRender) H.R.render();

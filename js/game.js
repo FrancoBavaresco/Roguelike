@@ -98,7 +98,7 @@ G.makePlayer = function (idx, seat) {
   p.useStam = p.charId === 'knight'; p.maxStam = H.STAMINA.max; p.stam = p.maxStam; p.stamT = 0;
   // animation state written by the game; the view reads it (castN/swingN/twirlN are event counters)
   p.anim = { castN: 0, castSide: 1, swing: null, swingN: 0, twirlN: 0, chargeK: 0, el: null };
-  p.model = H.R.makeHero(p.charId, accent, idx === 0 ? 0x38323f : 0x1e3a40);
+  H.views.create(p, { accent, cloak: idx === 0 ? 0x38323f : 0x1e3a40 });
   if (idx === 0 && H.CHARACTERS[p.charId]) p.name = H.CHARACTERS[p.charId].name;
   // each hero carries their own persistent equipment (one seat per hero in co-op)
   if (G.run && G.run.mode !== 'tutorial' && G._gearTaken && !G._gearTaken.has(p.charId)) { G._gearTaken.add(p.charId); const me = G.heroGear(p.charId); p.persist = true; for (const k in p.equip) p.equip[k] = (me.equip[k] && H.ITEMS[me.equip[k]]) ? me.equip[k] : null; for (let i = 0; i < H.BAG_SIZE; i++) p.bag[i] = (me.bag[i] && H.ITEMS[me.bag[i]]) ? me.bag[i] : null; p.heldBack = {}; for (const k in p.equip) if (p.equip[k] && !G.canUse(p, p.equip[k])) { p.heldBack[k] = p.equip[k]; p.equip[k] = null; } G.recalcPlayer(p); p.hp = p.maxHp; p.mana = p.maxMana; }
@@ -128,12 +128,12 @@ G.recalcPlayer = function (p) {
   const dm = 2 + (p.boon === 'spare_breath' ? 1 : 0) + (p.charms.has('spare_breath') ? 1 : 0); if (dm > p.dashMax) p.dashCharges += dm - p.dashMax; p.dashMax = dm;
 };
 G.clearAll = function () {
-  for (const e of G.enemies) H.R.removeMesh(e.model.root);
+  for (const e of G.enemies) H.views.release(e);
   for (const p of G.projs) H.R.removeMesh(p.mesh);
   for (const z of G.zones) G.disposeZone(z);
   for (const t of G.tgs) H.R.removeMesh(t.mesh);
   for (const t of G.totems) H.R.removeMesh(t.mesh);
-  for (const p of G.players) { H.R.removeMesh(p.model.root); if (p._carrow) { H.R.removeMesh(p._carrow); p._carrow = null; } }
+  for (const p of G.players) H.views.release(p);
   G.clearFlyers(); G.enemies = []; G.projs = []; G.zones = []; G.tgs = []; G.totems = []; G.players = [];
   G.room = null; G.boss = null; G.tut = null;
 };
@@ -224,7 +224,7 @@ G.enterNode = function (node) {
 };
 G.loadRoom = function (type, opts = {}) {
   // cleanup transient
-  for (const e of G.enemies) H.R.removeMesh(e.model.root);
+  for (const e of G.enemies) H.views.release(e);
   for (const p of G.projs) H.R.removeMesh(p.mesh);
   for (const z of G.zones) G.disposeZone(z);
   for (const t of G.tgs) H.R.removeMesh(t.mesh);
@@ -334,7 +334,7 @@ G.spawnEnemy = function (type, x, z, affix, extra) {
   };
   Object.assign(e, extra || {});
   e.hp = e.maxHp;
-  e.model = def.boss ? H.R.makeBoss(type) : H.R.makeEnemy(type, elite);
+  H.views.create(e);
   if (e.boss) { e.ai.state = 'intro'; e.spawnK = 1; }
   G.enemies.push(e);
   if (H.AI.init) H.AI.init(e);
@@ -382,7 +382,7 @@ G.step = function (dt) {
   for (const p of G.players) G.updatePlayer(p, dt);
   for (const e of G.enemies) if (!e.dead) G.updateEnemy(e, dt);
   G.updateProjs(dt); G.updateFlyers(dt); G.updateZones(dt); G.updateTelegraphs(dt); G.updateTotems(dt); G.updateVents(dt);
-  G.enemies = G.enemies.filter(e => { if (e.dead && e.removeT <= 0) { H.R.removeMesh(e.model.root); return false; } if (e.dead) { e.removeT -= dt; H.R.animateDying(e.model, e, dt); } return true; });
+  G.enemies = G.enemies.filter(e => { if (e.dead && e.removeT <= 0) { H.views.release(e); return false; } if (e.dead) e.removeT -= dt; return true; });
   G.runTimers(dt);
   G.updateRoom(dt);
   if (run.comboT > 0) { run.comboT -= dt; if (run.comboT <= 0) run.combo = 0; }
@@ -439,8 +439,7 @@ G.pickTarget = function (p, dx, dz, maxAng, range, px, pz) {
   return best;
 };
 G.updatePlayer = function (p, dt) {
-  const m = p.model;
-  if (p.dead) { H.R.setModelVisible(m, false); return; }
+  if (p.dead) return; // the view hides a dead hero
   const it = p.intent || { mx: 0, mz: 0, held: {}, pressed: {}, released: {} };
   // timers
   p.iframes = Math.max(0, p.iframes - dt); p.invuln = Math.max(0, p.invuln - dt); p.hurtT = Math.max(0, p.hurtT - dt); p.dashChainT = Math.max(0, (p.dashChainT || 0) - dt); p.invulnBlink = Math.max(0, p.invulnBlink - dt);
@@ -474,7 +473,7 @@ G.updatePlayer = function (p, dt) {
     else p.reviveK = Math.max(0, p.reviveK - dt * 0.5);
     if (p.reviveK >= 1) { p.downed = false; p.hp = Math.round(p.maxHp * 0.4); p.invuln = 1.5; p.reviveK = 0; G.float(p.x, 2.4, p.z, 'REVIVED', 'big good'); H.audio.play('heal'); G.emit('revive', { p }); }
     else if (p.bleedT <= 0) { G.killPlayer(p); }
-    H.R.animateRogue(m, p, dt); return;
+    return;
   }
   G.resolveAim(p, it);
   // dash
@@ -541,7 +540,6 @@ G.updatePlayer = function (p, dt) {
   // interaction
   G.checkInteract(p, it);
   // regen ward visuals etc handled in model
-  H.R.animateRogue(m, p, dt);
   if (p.idx === 0 && H.R.reticle) {
     const show = p.src === 'kbm' && G.active && !G.modal; H.R.reticle.visible = show && !!p.aimPt;
     if (show && p.aimPt) { H.R.reticle.position.x = p.aimPt.x; H.R.reticle.position.z = p.aimPt.z; }
@@ -1426,7 +1424,7 @@ G.tickEthereal = function (e, dt) {
   if (e.ethCd <= 0 && e.ai && e.ai.state !== 'windup') { e.ethCd = H.rand(5.5, 7.5); e.etherealT = 1.6; H.R.setGhost(e.model, true); H.R.burst(e.x, 1.4, e.z, 0x8fd8e8, 14, 3, 0.5, 0.4); }
 };
 G.updateEnemy = function (e, dt) {
-  if (e.spawnK < 1) { e.spawnK = Math.min(1, e.spawnK + dt * 4); H.R.animateEnemy(e.model, e, dt); return; }
+  if (e.spawnK < 1) { e.spawnK = Math.min(1, e.spawnK + dt * 4); return; }
   e.reactCd -= dt; e.lastHurtT += dt;
   if (e.shieldDown) { e.shieldDown -= dt; if (e.shieldDown <= 0) e.shieldDown = 0; }
   G.tickStatuses(e, dt); if (e.dead) return;
@@ -1444,7 +1442,6 @@ G.updateEnemy = function (e, dt) {
   for (const o of G.enemies) { if (o === e || o.dead || o.spawnK < 1) continue; const dx = e.x - o.x, dz = e.z - o.z, d2 = dx * dx + dz * dz, m = e.r + o.r; if (d2 < m * m && d2 > 1e-6) { const d = Math.sqrt(d2), push = (m - d) * 0.5; const w = o.mass / (e.mass + o.mass); e.x += dx / d * push * w * 2; e.z += dz / d * push * w * 2; } }
   for (const p of G.players) { if (p.dead) continue; const dx = e.x - p.x, dz = e.z - p.z, d2 = dx * dx + dz * dz, m = e.r + p.r * 0.8; if (d2 < m * m && d2 > 1e-6) { const d = Math.sqrt(d2); e.x += dx / d * (m - d) * 0.7; e.z += dz / d * (m - d) * 0.7; p.x -= dx / d * (m - d) * 0.3; p.z -= dz / d * (m - d) * 0.3; } }
   G.collide(e);
-  H.R.animateEnemy(e.model, e, dt);
 };
 
 /* ---------------- Room flow ---------------- */
