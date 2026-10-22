@@ -218,9 +218,9 @@ H.NODES = {
 
 H.DEPTHS = [
   null,
-  { name: 'The Gaol Undercroft', stone: 0x2a2531, stone2: 0x1c1922, rune: 0x8c5cff, fog: 0x120e19, light: 0xb7a8ff, accent: '#a07bff', boss: 'gaolwright', layers: 6 },
-  { name: 'The Kiln Halls', stone: 0x33241f, stone2: 0x221815, rune: 0xff7a2e, fog: 0x190e0b, light: 0xffb27a, accent: '#ff8a4a', boss: 'kiln_saint', layers: 7 },
-  { name: 'The Hollow Court', stone: 0x222a33, stone2: 0x161c23, rune: 0x5ff0e0, fog: 0x0a1016, light: 0x9ff3ff, accent: '#6ff0e0', boss: 'hollow_regent', layers: 7 }
+  { name: 'The Gaol Undercroft', stone: 0x26302c, stone2: 0x18201d, rune: 0x0cff3a, fog: 0x07110d, light: 0x9dffc0, accent: '#4dff8a', boss: 'gaolwright', layers: 6 },
+  { name: 'The Kiln Halls', stone: 0x2c2e22, stone2: 0x1d1f15, rune: 0x6cff08, fog: 0x0c0f06, light: 0xd8ffa0, accent: '#b6ff3a', boss: 'kiln_saint', layers: 7 },
+  { name: 'The Hollow Court', stone: 0x1f2e2e, stone2: 0x142020, rune: 0x06ffa0, fog: 0x051110, light: 0x9ffff0, accent: '#3fffd0', boss: 'hollow_regent', layers: 7 }
 ];
 
 H.MILESTONES = {

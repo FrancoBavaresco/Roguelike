@@ -400,8 +400,83 @@ R.makeBrickTextures = function () {
   for (const t of [map, bump]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / 6.5, 1 / 6.5); t.anisotropy = Math.min(8, R.renderer.capabilities.getMaxAnisotropy()); }
   return { map, bump };
 };
+/* Floor: large grey stone slabs (1×1 to 3×2 m) laid on a 1 m grid, with worn bevels, cracks and chipped
+   corners. One 8×8 m texture tile; slabs never cross the tile edge, so it repeats seamlessly. */
+R.makeSlabTextures = function () {
+  const N = 1024, CELL = N / 8, GR = 5, rnd = R.mulberry(0x5eed51ab);
+  const col = document.createElement('canvas'); col.width = col.height = N; const c = col.getContext('2d');
+  const hgt = document.createElement('canvas'); hgt.width = hgt.height = N; const h = hgt.getContext('2d');
+  c.fillStyle = '#1b201e'; c.fillRect(0, 0, N, N); h.fillStyle = '#000'; h.fillRect(0, 0, N, N);
+  const used = Array.from({ length: 8 }, () => Array(8).fill(false));
+  const sizes = [[2, 2], [2, 2], [3, 2], [2, 3], [2, 1], [1, 2], [1, 1], [3, 3]];
+  const slabs = [];
+  for (let gy = 0; gy < 8; gy++) for (let gx = 0; gx < 8; gx++) {
+    if (used[gy][gx]) continue;
+    let pick = [1, 1];
+    for (let t = 0; t < 6; t++) { const [w, hh] = sizes[rnd() * sizes.length | 0]; let ok = gx + w <= 8 && gy + hh <= 8; for (let y = gy; ok && y < gy + hh; y++) for (let x = gx; ok && x < gx + w; x++) if (used[y][x]) ok = false; if (ok) { pick = [w, hh]; break; } }
+    for (let y = gy; y < gy + pick[1]; y++) for (let x = gx; x < gx + pick[0]; x++) used[y][x] = true;
+    slabs.push([gx, gy, pick[0], pick[1]]);
+  }
+  for (const [gx, gy, w, hh] of slabs) {
+    const x = gx * CELL + GR / 2, y = gy * CELL + GR / 2, W = w * CELL - GR, Hh = hh * CELL - GR;
+    const g = 104 + rnd() * 34 | 0, tint = (rnd() - .5) * 8;
+    c.fillStyle = `rgb(${g - 4 + tint | 0},${g + 3 | 0},${g + tint | 0})`; c.fillRect(x, y, W, Hh);
+    // soft mottling inside the slab
+    for (let q = 0; q < 10 * w * hh; q++) { const r = 10 + rnd() * 40, px = x + rnd() * W, py = y + rnd() * Hh; const mg = c.createRadialGradient(px, py, 0, px, py, r); const a = rnd() * 0.08; mg.addColorStop(0, rnd() < .5 ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a * 0.6})`); mg.addColorStop(1, 'rgba(0,0,0,0)'); c.save(); c.beginPath(); c.rect(x, y, W, Hh); c.clip(); c.fillStyle = mg; c.fillRect(px - r, py - r, r * 2, r * 2); c.restore(); }
+    for (let q = 0; q < 160 * w * hh; q++) { c.fillStyle = rnd() < .5 ? 'rgba(0,0,0,.16)' : 'rgba(255,255,255,.07)'; c.fillRect(x + rnd() * W, y + rnd() * Hh, 1 + rnd() * 2, 1 + rnd() * 2); }
+    // bevel: light upper/left edge, dark lower/right edge
+    c.fillStyle = 'rgba(255,255,255,.13)'; c.fillRect(x, y, W, 4); c.fillRect(x, y, 4, Hh);
+    c.fillStyle = 'rgba(0,0,0,.32)'; c.fillRect(x, y + Hh - 5, W, 5); c.fillRect(x + W - 5, y, 5, Hh);
+    // cracks
+    if (rnd() < 0.35) { c.strokeStyle = 'rgba(12,15,13,.85)'; c.lineWidth = 1.4; c.beginPath(); let px = x + W * (0.15 + rnd() * .7), py = y + 3; c.moveTo(px, py); const len = Hh * (0.4 + rnd() * 0.6); while (py < y + len) { px += (rnd() - .5) * 14; py += 4 + rnd() * 8; c.lineTo(Math.max(x, Math.min(x + W, px)), py); } c.stroke(); }
+    // chipped corners
+    for (let k = 0; k < 2; k++) if (rnd() < 0.3) { c.fillStyle = '#1b201e'; c.beginPath(); c.arc(x + (rnd() < .5 ? 0 : W), y + (rnd() < .5 ? 0 : Hh), 5 + rnd() * 10, 0, 7); c.fill(); }
+    const hg = h.createLinearGradient(x, y, x + W, y + Hh); const lv = 180 + rnd() * 50 | 0; hg.addColorStop(0, `rgb(${lv},${lv},${lv})`); hg.addColorStop(1, `rgb(${lv - 35},${lv - 35},${lv - 35})`);
+    h.fillStyle = hg; h.fillRect(x + 2, y + 2, W - 4, Hh - 4);
+  }
+  // grime that crosses slabs (wrapped)
+  for (let q = 0; q < 18; q++) {
+    const x = rnd() * N, y = rnd() * N, r = 60 + rnd() * 180, a = 0.08 + rnd() * 0.14;
+    for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) { const g = c.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r); g.addColorStop(0, `rgba(10,16,13,${a})`); g.addColorStop(1, 'rgba(10,16,13,0)'); c.fillStyle = g; c.fillRect(x + ox - r, y + oy - r, r * 2, r * 2); }
+  }
+  const THREE = T3();
+  const map = new THREE.CanvasTexture(col); map.encoding = THREE.sRGBEncoding;
+  const bump = new THREE.CanvasTexture(hgt);
+  for (const t of [map, bump]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / 8, 1 / 8); t.anisotropy = Math.min(8, R.renderer.capabilities.getMaxAnisotropy()); }
+  return { map, bump };
+};
+/* Greek-key (meander) band drawn along a horizontal strip: used on floor panels and column bands */
+R.drawMeander = function (c, x, y, len, hh, color, lw) {
+  const u = hh; const n = Math.max(1, Math.round(len / u)); const uw = len / n;
+  c.strokeStyle = color; c.lineWidth = lw; c.lineJoin = 'miter'; c.beginPath();
+  for (let i = 0; i < n; i++) {
+    const X = x + i * uw, a = uw * 0.15, b = hh * 0.15;
+    c.moveTo(X, y + hh - b); c.lineTo(X + uw * 0.85, y + hh - b); c.lineTo(X + uw * 0.85, y + b); c.lineTo(X + a, y + b); c.lineTo(X + a, y + hh * 0.62); c.lineTo(X + uw * 0.55, y + hh * 0.62); c.lineTo(X + uw * 0.55, y + hh * 0.4);
+  }
+  c.stroke();
+  c.lineWidth = lw * 0.8; c.beginPath(); c.moveTo(x, y + 1); c.lineTo(x + len, y + 1); c.moveTo(x, y + hh - 1); c.lineTo(x + len, y + hh - 1); c.stroke();
+};
+R.softDisc = function () { return R._softDisc || (R._softDisc = R.canvasTex(128, 128, c => { const g = c.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.55, 'rgba(255,255,255,.7)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 128, 128); })); };
+R.panelTexture = function () {
+  if (R._panelTex) return R._panelTex;
+  return (R._panelTex = R.canvasTex(512, 512, c => {
+    const N = 512; c.fillStyle = '#868d89'; c.fillRect(0, 0, N, N);
+    for (let q = 0; q < 2200; q++) { c.fillStyle = R.drand() < .5 ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.06)'; c.fillRect(R.drand() * N, R.drand() * N, 2, 2); }
+    c.strokeStyle = 'rgba(20,26,23,.85)'; c.lineWidth = 8; c.strokeRect(10, 10, N - 20, N - 20);
+    for (let side = 0; side < 4; side++) { c.save(); c.translate(N / 2, N / 2); c.rotate(side * Math.PI / 2); c.translate(-N / 2, -N / 2); R.drawMeander(c, 40, 30, N - 80, 46, 'rgba(24,30,27,.9)', 6); c.restore(); }
+    c.strokeStyle = 'rgba(24,30,27,.8)'; c.lineWidth = 5; c.strokeRect(96, 96, N - 192, N - 192);
+    c.beginPath(); c.arc(N / 2, N / 2, 70, 0, 7); c.stroke(); c.beginPath(); c.arc(N / 2, N / 2, 34, 0, 7); c.stroke();
+    for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; c.beginPath(); c.moveTo(N / 2 + Math.cos(a) * 34, N / 2 + Math.sin(a) * 34); c.lineTo(N / 2 + Math.cos(a) * 70, N / 2 + Math.sin(a) * 70); c.stroke(); }
+    const eg = c.createRadialGradient(N / 2, N / 2, N * 0.2, N / 2, N / 2, N * 0.75); eg.addColorStop(0, 'rgba(0,0,0,0)'); eg.addColorStop(1, 'rgba(0,0,0,.25)'); c.fillStyle = eg; c.fillRect(0, 0, N, N);
+  }));
+};
+R.bandTexture = function () {
+  if (R._bandTex) return R._bandTex;
+  const t = R.canvasTex(512, 64, c => { c.fillStyle = '#8a918d'; c.fillRect(0, 0, 512, 64); R.drawMeander(c, 0, 8, 512, 48, 'rgba(22,28,25,.95)', 5); });
+  t.wrapS = T3().RepeatWrapping; return (R._bandTex = t);
+};
 R.floorMaterial = function (tint) {
-  if (!R.brickTex) R.brickTex = R.makeBrickTextures();
+  if (!R.brickTex) R.brickTex = H.settings.look === 'classic' ? R.makeBrickTextures() : R.makeSlabTextures();
   return new (T3().MeshStandardMaterial)({ color: tint, map: R.brickTex.map, bumpMap: R.brickTex.bump, bumpScale: 0.035, roughness: 0.92, metalness: 0.02 });
 };
 /* Rough-cut wall stone: larger irregular blocks, darker; tiles every 2 m */
@@ -424,7 +499,7 @@ R.buildChamber = function (room, theme) {
   const b = room.bounds;
   const W = b.maxX - b.minX, D = b.maxZ - b.minZ;
   // floor: one continuous paver surface (gray brick, running bond) with real holes for pits
-  const tint = new THREE.Color(0xffffff).lerp(new THREE.Color(theme.light), 0.12).multiplyScalar(0.7);
+  const tint = H.settings.look === 'classic' ? new THREE.Color(0xffffff).lerp(new THREE.Color(theme.light), 0.12).multiplyScalar(0.7) : new THREE.Color(0xffffff).lerp(new THREE.Color(theme.rune), 0.14).multiplyScalar(0.6);
   const floorMat = R.floorMaterial(tint);
   const shape = new THREE.Shape(); const fx0 = b.minX - 2.2, fx1 = b.maxX + 2.2, fz0 = b.minZ - 2.2, fz1 = b.maxZ + 2.2;
   shape.moveTo(fx0, -fz1); shape.lineTo(fx1, -fz1); shape.lineTo(fx1, -fz0); shape.lineTo(fx0, -fz0); shape.lineTo(fx0, -fz1);
@@ -436,7 +511,7 @@ R.buildChamber = function (room, theme) {
   vg.rotation.x = -Math.PI / 2; vg.position.set((b.minX + b.maxX) / 2, 0.012, (b.minZ + b.maxZ) / 2); R.chamber.add(vg);
   // a soft pool of the depth's light in the middle of the floor: the fight area reads brighter than the edges
   if (H.settings.look !== 'classic') {
-    const pool = new THREE.Mesh(new THREE.PlaneGeometry(W * 1.1, D * 1.1), new THREE.MeshBasicMaterial({ map: R.texPool || (R.texPool = R.canvasTex(256, 256, c => { const g = c.createRadialGradient(128, 128, 0, 128, 128, 128); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.55, 'rgba(255,255,255,.45)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 256, 256); })), color: theme.light, transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const pool = new THREE.Mesh(new THREE.PlaneGeometry(W * 1.1, D * 1.1), new THREE.MeshBasicMaterial({ map: R.texPool || (R.texPool = R.canvasTex(256, 256, c => { const g = c.createRadialGradient(128, 128, 0, 128, 128, 128); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.55, 'rgba(255,255,255,.45)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, 256, 256); })), color: theme.rune, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
     pool.rotation.x = -Math.PI / 2; pool.position.set((b.minX + b.maxX) / 2, 0.014, (b.minZ + b.maxZ) / 2); R.chamber.add(pool);
   }
   // pit walls (short brick collars going down)
@@ -448,7 +523,7 @@ R.buildChamber = function (room, theme) {
     m.rotation.x = -Math.PI / 2; m.rotation.z = R.drand() * 6; m.position.set(x, 0.03, z); R.chamber.add(m);
   }
   // walls
-  const wallMat = R.wallMaterial(new THREE.Color(0xffffff).lerp(new THREE.Color(theme.light), 0.1).multiplyScalar(0.5));
+  const wallMat = R.wallMaterial(H.settings.look === 'classic' ? new THREE.Color(0xffffff).lerp(new THREE.Color(theme.light), 0.1).multiplyScalar(0.5) : new THREE.Color(0xffffff).lerp(new THREE.Color(theme.rune), 0.18).multiplyScalar(0.36));
   const runeMat = R.basic(theme.rune);
   const wallTops = [];
   const addBlock = (x, z, w, h, d, low, east, side) => {
@@ -497,6 +572,14 @@ R.buildChamber = function (room, theme) {
     const cap = new THREE.Mesh(new THREE.CylinderGeometry(oct(p.r * 1.16), oct(p.r * 1.02), 0.5, 8), blockMats[2]); cap.position.y = y + 0.25; cap.castShadow = true; g.add(cap);
     // faint rune seam between two drums
     const band = new THREE.Mesh(new THREE.CylinderGeometry(oct(p.r * 0.985), oct(p.r * 0.985), 0.06, 8), runeMat); band.position.y = 0.1 + bh * (1 + (R.drand() < .5 ? 1 : 0)) - 0.025; g.add(band);
+    if (H.settings.look !== 'classic') {
+      // carved greek-key band just under the capital, and a cluster of glowing crystals on top
+      const bandM = R.mat('meanderBand_' + theme.light, () => new THREE.MeshStandardMaterial({ map: R.bandTexture(), color: stoneTint.clone().multiplyScalar(1.25), roughness: 0.9, metalness: 0 }));
+      const mb = new THREE.Mesh(new THREE.CylinderGeometry(oct(p.r * 1.012), oct(p.r * 1.012), 0.42, 8, 1, true), bandM); mb.geometry.attributes.uv.array.forEach((v, k, a) => { if (k % 2 === 0) a[k] = v * 4; }); mb.position.y = y - 0.3; g.add(mb);
+      const crysM = R.mat('crystal_' + theme.rune, () => new THREE.MeshBasicMaterial({ color: theme.rune, toneMapped: false }));
+      for (let k = 0; k < 5; k++) { const cr = new THREE.Mesh(new THREE.ConeGeometry(0.1 + R.drand() * 0.1, 0.5 + R.drand() * 0.7, 5), crysM); cr.position.set((R.drand() - .5) * p.r, y + 0.5 + 0.25, (R.drand() - .5) * p.r); cr.rotation.set((R.drand() - .5) * 0.8, 0, (R.drand() - .5) * 0.8); g.add(cr); }
+      const cg = R.glowSprite(theme.rune, 2.4); cg.position.y = y + 1.0; cg.material.opacity = 0.35; g.add(cg);
+    }
     g.rotation.y = R.drand() * Math.PI / 4;
     g.position.set(p.x, 0, p.z); R.chamber.add(g); g.userData = { pillar: true, x: p.x, z: p.z, r: p.r, h, fade: 1 };
   }
@@ -522,8 +605,8 @@ R.buildChamber = function (room, theme) {
     const fl = R.glowSprite(theme.rune, 1.6); fl.position.y = 1.5; g.add(fl);
     g.position.set(p[0], 0, p[1]); g.userData.brazier = true; R.chamber.add(g);
     let light = null;
-    if (i < 2 && H.settings.quality !== 'low') { light = R.brazierLights[i]; light.color.setHex(theme.rune); light.intensity = 1.2; light.position.set(p[0], 1.8, p[1]); }
-    R.braziers.push({ x: p[0], z: p[1], fl, light, ph: R.drand() * 7 });
+    if (i < 2 && H.settings.quality !== 'low') { light = R.brazierLights[i]; light.color.setHex(theme.rune); light.intensity = H.settings.look === 'classic' ? 1.2 : 2.2; light.distance = H.settings.look === 'classic' ? 10 : 13; light.position.set(p[0], 1.8, p[1]); }
+    R.braziers.push({ x: p[0], z: p[1], fl, light, ph: R.drand() * 7, i0: H.settings.look === 'classic' ? 1.1 : 2.1 });
   });
   // doors
   for (const d of room.doors) R.buildDoor(d, theme);
@@ -535,6 +618,9 @@ R.buildChamber = function (room, theme) {
   R.key.position.set(b.minX + W * 0.3, 18, b.minZ + D * 0.7); R.key.target.position.set((b.minX + b.maxX) / 2, 0, (b.minZ + b.maxZ) / 2);
   { const sc = R.key.shadow.camera, ext = Math.hypot(W, D) / 2 + 3; sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.updateProjectionMatrix(); }
   if (R.rim) R.rim.intensity = H.settings.look === 'classic' ? 0 : 0.45;
+  // the key light takes some of the depth's colour (the classic look keeps its warm torchlight)
+  R.key.color.setHex(0xffd9b0); R.key.intensity = 0.6; if (H.settings.look !== 'classic') { R.key.color.setHex(0xd8e8e0).lerp(new THREE.Color(theme.rune), 0.25); R.key.intensity = 0.5; }
+  if (R.rim) R.rim.color.setHex(H.settings.look === 'classic' ? 0x8fa8ff : 0x7fe0d0);
   // fewer draw calls: walls, rune strips and other loose static pieces become a few meshes; each pillar
   // and brazier is merged inside its own group (pillars must stay separate to fade on their own)
   if (H.settings.bake !== false) {
@@ -752,9 +838,11 @@ R.buildDecor = function (room, theme, wallTops, doorXs) {
     clay: () => R.std(0x8a4a2c, { roughness: 0.9 }),
     slag: () => R.std(0x241c1a, { roughness: 1 }),
     cloth: () => R.std(new THREE.Color(theme.rune).multiplyScalar(0.45).getHex(), { roughness: 1, side: THREE.DoubleSide }),
-    glow: () => R.basic(theme.rune),
-    ember: () => R.basic(0xff7a2e),
-    patch: () => new THREE.MeshBasicMaterial({ color: depth === 2 ? 0x0a0807 : depth === 3 ? 0x05080c : 0x6a5a30, transparent: true, opacity: depth === 1 ? 0.22 : 0.4, depthWrite: false })
+    glow: () => R.basic(theme.rune, { toneMapped: false }),
+    ember: () => R.basic(theme.rune),
+    rail: () => R.std(new THREE.Color(theme.stone).lerp(new THREE.Color(0x9aa39e), 0.55).getHex(), { roughness: 0.9 }),
+    glowpatch: () => new THREE.MeshBasicMaterial({ map: R.softDisc(), color: theme.rune, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+    patch: () => new THREE.MeshBasicMaterial({ map: R.softDisc(), color: 0x08140c, transparent: true, opacity: 0.7, depthWrite: false })
   };
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
   const put = (key, geo, x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) => {
@@ -768,7 +856,7 @@ R.buildDecor = function (room, theme, wallTops, doorXs) {
   const chain = (x, z, y0, len, ry) => { const n = Math.round(len / 0.11); for (let k = 0; k < n; k++) put('iron', new THREE.TorusGeometry(0.055, 0.017, 4, 8), x, y0 - k * 0.11, z, 0, ry + (k % 2 ? Math.PI / 2 : 0), 0, 1, 1.35, 1); put('iron', new THREE.TorusGeometry(0.13, 0.025, 4, 10), x, y0 - n * 0.11 - 0.1, z, 0, ry, 0); };
   const rock = (key, x, y, z, s) => put(key, new THREE.DodecahedronGeometry(s, 0), x, y + s * 0.6, z, rnd() * 3, rnd() * 3, rnd() * 3, 1, 0.7 + rnd() * 0.4, 1);
   const jar = (x, y, z, s) => { const pts = [[0, 0], [0.16, 0.02], [0.22, 0.2], [0.19, 0.38], [0.09, 0.46], [0.1, 0.52]].map(([a, c]) => new THREE.Vector2(a * s, c * s)); put('clay', new THREE.LatheGeometry(pts, 8), x, y, z); };
-  const patch = (x, z, r) => { const g = new THREE.CircleGeometry(r, 9); const pa = g.attributes.position; for (let k = 1; k < pa.count; k++) { const f = 0.7 + rnd() * 0.5; pa.setXY(k, pa.getX(k) * f, pa.getY(k) * f); } put('patch', g, x, 0.006, z, -Math.PI / 2, 0, rnd() * 6.28); };
+  const patch = (x, z, r, key = 'patch') => { const g = new THREE.CircleGeometry(r, 9); const pa = g.attributes.position; for (let k = 1; k < pa.count; k++) { const f = 0.7 + rnd() * 0.5; pa.setXY(k, pa.getX(k) * f, pa.getY(k) * f); } put(key, g, x, key === 'glowpatch' ? 0.009 : 0.006, z, -Math.PI / 2, 0, rnd() * 6.28); };
   const crystal = (x, y, z) => { for (let k = 0; k < 3 + (rnd() * 3 | 0); k++) put('glow', new THREE.ConeGeometry(0.07 + rnd() * 0.06, 0.4 + rnd() * 0.6, 5), x + (rnd() - .5) * 0.5, y + 0.2, z + (rnd() - .5) * 0.5, (rnd() - .5) * 0.7, 0, (rnd() - .5) * 0.7); };
   const bust = (x, y, z, ry, fallen) => { put('stone', new THREE.BoxGeometry(0.5, 0.35, 0.5), x, y + 0.17, z, 0, ry); if (fallen) { put('stone', new THREE.BoxGeometry(0.45, 0.6, 0.3), x + 0.5, y + 0.15, z, 0, ry, Math.PI / 2); put('stone', new THREE.SphereGeometry(0.2, 7, 5), x + 0.9, y + 0.2, z + 0.3); } else { put('stone', new THREE.BoxGeometry(0.45, 0.6, 0.3), x, y + 0.65, z, 0, ry); put('stone', new THREE.SphereGeometry(0.2, 7, 5), x, y + 1.1, z); } };
   const banner = (x, z, ry, top) => { const g = new THREE.PlaneGeometry(0.9, 2.0, 1, 4); const pa = g.attributes.position; for (let k = 0; k < pa.count; k++) if (pa.getY(k) < -0.9) pa.setY(k, pa.getY(k) + rnd() * 0.5); put('cloth', g, x, top - 1.1, z, 0, ry); put('iron', new THREE.CylinderGeometry(0.03, 0.03, 1.1, 5), x, top - 0.05, z, 0, ry, Math.PI / 2); };
@@ -798,11 +886,33 @@ R.buildDecor = function (room, theme, wallTops, doorXs) {
     if (side === 2) return [b.maxX - d, b.minZ + 1 + u * (b.maxZ - b.minZ - 2)]; return [b.minX + 1 + u * (b.maxX - b.minX - 2), b.maxZ - d]; };
   const clearOf = (x, z) => !room.pits.some(p => Math.hypot(p.x - x, p.z - z) < p.r + 0.8) && !room.doors.some(d => Math.abs(d.x - x) < 2) && !(room.prop && Math.hypot(room.prop.x - x, room.prop.z - z) < 2.5);
   for (let i = 0; i < 14; i++) { const [x, z] = band(); if (!clearOf(x, z)) continue; if (depth === 1 && i % 2) boneBit(x, z); else patch(x, z, 0.4 + rnd() * 0.7); }
+  // glowing moss and slime across the floor: a dark stain with a faint glow of the depth's colour on top
+  for (let i = 0; i < 12; i++) { const x = b.minX + 1 + rnd() * (b.maxX - b.minX - 2), z = b.minZ + 1 + rnd() * (b.maxZ - b.minZ - 2); if (!clearOf(x, z)) continue; const r = 0.5 + rnd() * 1.1; patch(x, z, r * 1.15); patch(x, z, r, 'glowpatch'); }
+  // ---- carved floor panels (greek-key border), flat, in open floor ----
+  const freeFor = (x, z, half) => !room.pits.some(p => Math.hypot(p.x - x, p.z - z) < p.r + half * 1.5) && !room.pillars.some(p => Math.hypot(p.x - x, p.z - z) < p.r + half * 1.5) && !room.doors.some(d => Math.abs(d.x - x) < 2.5 && Math.abs(b.minZ - z) < 3.5) && !(room.prop && Math.hypot(room.prop.x - x, room.prop.z - z) < 3);
+  const panels = []; const tries = [[(b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2]];
+  for (let k = 0; k < 10; k++) tries.push([b.minX + 3 + rnd() * (b.maxX - b.minX - 6), b.minZ + 3 + rnd() * (b.maxZ - b.minZ - 6)]);
+  for (const [x, z] of tries) { if (panels.length >= 2) break; const sx = Math.round(x), sz = Math.round(z); if (freeFor(sx, sz, 1.4) && panels.every(([px, pz]) => Math.hypot(px - sx, pz - sz) > 5)) panels.push([sx, sz]); }
+  if (panels.length) {
+    const pm = R.mat('panel_' + theme.light, () => new THREE.MeshStandardMaterial({ map: R.panelTexture(), color: new THREE.Color(0xffffff).lerp(new THREE.Color(theme.light), 0.15).multiplyScalar(0.85), roughness: 0.9, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    const geos = panels.map(([x, z]) => { const g2 = new THREE.PlaneGeometry(2.8, 2.8); g2.rotateX(-Math.PI / 2); g2.translate(x, 0.004, z); return { geo: g2, mx: new THREE.Matrix4() }; });
+    const pmesh = new THREE.Mesh(R.mergeGeos(geos), pm); pmesh.receiveShadow = true; pmesh.userData.panels = panels.length; R.chamber.add(pmesh);
+  }
+  // ---- balustrades on the low south edge, and on the east edge where the isometric view cuts the wall ----
+  const rail = (key, x0, z0, x1, z1) => {
+    const len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(2, Math.round(len / 0.6)), ry = Math.atan2(x1 - x0, z1 - z0);
+    for (let k = 0; k <= n; k++) { const t = k / n, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t; put(key, new THREE.CylinderGeometry(0.06, 0.085, 0.62, 6), x, 0.2 + 0.33, z); put(key, new THREE.BoxGeometry(0.2, 0.08, 0.2), x, 0.24, z); }
+    put(key, new THREE.BoxGeometry(0.24, 0.12, len + 0.2), (x0 + x1) / 2, 0.2 + 0.7, (z0 + z1) / 2, 0, ry);
+    for (const t of [0, 1]) put(key, new THREE.BoxGeometry(0.34, 0.95, 0.34), x0 + (x1 - x0) * t, 0.2 + 0.45, z0 + (z1 - z0) * t);
+  };
+  rail('rail', b.minX - 1.6, b.maxZ + 0.5, b.maxX + 1.6, b.maxZ + 0.5);
+  rail('eastRail', b.maxX + 0.5, b.minZ - 1.6, b.maxX + 0.5, b.maxZ + 0.5);
   // ---- one mesh per material ----
   const g = new THREE.Group(); g.userData.decor = true;
   for (const [key, list] of Object.entries(buckets)) {
-    const mesh = new THREE.Mesh(R.mergeGeos(list), mats[key]()); mesh.castShadow = key !== 'patch' && key !== 'glow' && key !== 'ember'; mesh.receiveShadow = key !== 'patch';
-    if (key === 'patch') mesh.renderOrder = -1;
+    const mesh = new THREE.Mesh(R.mergeGeos(list), mats[key === 'eastRail' ? 'rail' : key]());
+    if (key === 'eastRail') { mesh.castShadow = true; mesh.receiveShadow = true; R.toonify(mesh, null, { outline: false }); mesh.userData.eastRail = true; R.chamber.add(mesh); continue; } mesh.castShadow = key !== 'patch' && key !== 'glow' && key !== 'ember'; mesh.receiveShadow = key !== 'patch';
+    if (key === 'patch' || key === 'glowpatch') { mesh.renderOrder = -1; mesh.castShadow = mesh.receiveShadow = false; }
     g.add(mesh);
   }
   R.toonify(g, null, { outline: false });
@@ -810,7 +920,7 @@ R.buildDecor = function (room, theme, wallTops, doorXs) {
 };
 R.updateChamber = function (dt) {
   const t = R.t;
-  for (const b of R.braziers || []) { const f = 0.8 + Math.sin(t * 9 + b.ph) * 0.1 + Math.sin(t * 23 + b.ph) * 0.06; b.fl.scale.set(1.6 * f, 1.9 * f, 1); if (b.light) b.light.intensity = 1.1 * f; if (Math.random() < dt * 8) R.emit(b.x + (Math.random() - .5) * .3, 1.4, b.z + (Math.random() - .5) * .3, 0, 1.2, 0, 0.7, 0.22, 0.02, R.theme.rune, 0.8, -0.5, 1); }
+  for (const b of R.braziers || []) { const f = 0.8 + Math.sin(t * 9 + b.ph) * 0.1 + Math.sin(t * 23 + b.ph) * 0.06; b.fl.scale.set(1.6 * f, 1.9 * f, 1); if (b.light) b.light.intensity = (b.i0 || 1.1) * f; if (Math.random() < dt * 8) R.emit(b.x + (Math.random() - .5) * .3, 1.4, b.z + (Math.random() - .5) * .3, 0, 1.2, 0, 0.7, 0.22, 0.02, R.theme.rune, 0.8, -0.5, 1); }
   for (const d of R.doorObjs || []) {
     const target = d.d.open ? 1 : 0; d.open = target > d.open ? Math.min(1, d.open + dt * 0.9) : Math.max(0, d.open - dt * 1.5);
     d.portalMat.uniforms.uTime.value = t; d.portalMat.uniforms.uOpen.value = d.open;
@@ -1843,7 +1953,7 @@ R.setCameraMode = function (mode) {
 R.applyWallCut = function () {
   const iso = R.camMode === 'iso';
   for (const m of R.chamber ? R.chamber.children : []) {
-    const u = m.userData; if (!u.eastWall) continue;
+    const u = m.userData; if (u.eastRail) { m.visible = iso; continue; } if (!u.eastWall) continue;
     if (u.rune) { m.visible = !iso; continue; }
     m.scale.y = iso ? 0.5 / u.h : 1; m.position.y = iso ? 0.25 - 0.3 : u.h / 2 - 0.3;
   }
