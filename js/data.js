@@ -261,9 +261,9 @@ H.WEAPON_KITS = {
 H.SPELLS.sword_slash = { id: 'sword_slash', stam: 7, ups: { range: 0.3, dmg: 0.2 }, weapon: 'sword', dtype: 'slash', hero: 'knight', name: 'Sword Slash', el: 'stone', role: 'attack', kind: 'melee', glyph: 'k_slash', cd: 0.3, cost: 0, range: 2.9, dmg: 7, angle: 100, knock: 1.5, swing: 'slash', sfx: 'sword',
   // the charged whirl out of a dash is switched off for now (chargeOff); its Quick Attack is a fast 45° cut straight ahead
   chargeOff: { window: 0.35, dmgMul: 1.9, radius: 2.8, knock: 6 }, quick: { angle: 45, rangeMul: 1.1 },
-  // ground combo: two fast slashes, then a slow short-range sweep all around; after it, a short pause
-  combo: { gap: 0.1, window: 0.6, recover: 0.6, finisher: { dmgMul: 1.8, radius: 2.4, delay: 0.24, knock: 5 } },
-  desc: s => `Quick, light slash in front of you: ${s.dmg} damage. Combo: two fast slashes, then a slow sweep all around (${Math.round(s.dmg * 1.8)}). Slash during a dash, or right after it, for up to 3 quick cuts straight ahead (45°): ${Math.round(s.dmg * 1.4)} damage each.` };
+  // ground combo: two fast slashes, then a slower, heavier cut straight ahead (45°); after it, a short pause
+  combo: { gap: 0.1, window: 0.6, recover: 0.6, finisher: { dmgMul: 1.8, angle: 45, rangeMul: 1.1, delay: 0.24, knock: 5 } },
+  desc: s => `Quick, light slash in front of you: ${s.dmg} damage. Combo: two fast slashes, then a heavier cut straight ahead, 45° (${Math.round(s.dmg * 1.8)}). Slash during a dash, or right after it, for up to 3 quick cuts straight ahead (45°): ${Math.round(s.dmg * 1.4)} damage each.` };
 H.SPELLS.sword_thrust = { id: 'sword_thrust', stam: 22, ups: { range: 0.6, dmg: 0.25 , cd: 0.12 }, weapon: 'sword', dtype: 'pierce', hero: 'knight', name: 'Thrust', el: 'stone', role: 'attack', kind: 'thrust', glyph: 'k_thrust', cd: 5, cost: 0, range: 3.6, dmg: 16, width: 0.7, status: 'bleed', stacks: 2, lunge: { min: 2.0, max: 6.6, tip: 1.2, speed: 25, fullSpeed: 32 }, chargeable: { time: 0.8, hold: 1.2, fullMul: 1.3 },
   desc: s => `Hold to wind up: the arrow on the floor shows exactly how far you will dash. Release to lunge along it, piercing every foe on the way for ${s.dmg} damage and Bleeding. Fully charged: faster and +30% damage.` };
 H.SPELLS.sword_cleave = { id: 'sword_cleave', stam: 30, ups: { range: 0.4, dmg: 0.25 , cd: 0.12 }, weapon: 'sword', dtype: 'slash', hero: 'knight', name: 'Mighty Blow', el: 'stone', role: 'attack', kind: 'cleave', glyph: 'k_cleave', cd: 10, cost: 0, range: 3.2, dmg: 32, angle: 90, knock: 7,

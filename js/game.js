@@ -1715,19 +1715,25 @@ G.buyItem = function (p, prop, i) {
 };
 /* ---------------- Equipment drops ---------------- */
 /* Stamina helpers (only heroes with useStam: the Veteran). Charged attacks out of a dash cost more. */
-/* Third hit of the sword combo: the hero winds up for a moment, then sweeps the blade all the way round at short range. */
+/* Third hit of the sword combo: a short wind-up, then a heavy cut straight ahead in a 45° wedge (nothing at the sides or behind). */
 G.comboFinisher = function (p, def, st) {
   const f = def.combo.finisher, dmg = Math.round(st.dmg * f.dmgMul);
-  p.casting = f.delay + 0.12; p.aimHoldT = Math.max(p.aimHoldT || 0, f.delay + 0.2);
-  H.R.ring(p.x, p.z, 0xf2ead8, 0.3, f.radius * 0.5, f.delay, 0.08, 0.5, 0.06); H.audio.play('sword_draw');
+  p.casting = f.delay + 0.12; p.aimHoldT = Math.max(p.aimHoldT || 0, f.delay + 0.25);
+  H.audio.play('sword_draw');
   G.after(() => {
     if (!G.active || p.dead) return;
-    p.anim.twirlN++;
-    const base = Math.atan2(p.aimDX, p.aimDZ);
-    H.R.slashArc(p.x, p.z, base, Math.PI, 0.3, f.radius, 0xf6ecd4, 0.4); H.R.slashArc(p.x, p.z, base, Math.PI, 0.3, f.radius * 0.7, 0xcfd8e6, 0.32, 0.14);
-    H.R.burst(p.x, 0.5, p.z, 0xe8ecf2, 22 * G.fxMul(p), 7, 0.35, 0.4, { flat: true }); H.R.shake(0.2); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.05);
-    let hit = 0; for (const e of G.enemiesNear(p.x, p.z, f.radius)) { const [kx, kz] = H.norm(e.x - p.x, e.z - p.z); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: f.knock, phys: true, cone: true })); hit++; }
-    if (hit) H.audio.play('sword_hit', { heavy: true });
+    const base = Math.atan2(p.aimDX, p.aimDZ), R0 = st.range * (f.rangeMul || 1), ang = f.angle * Math.PI / 360;
+    p.anim.swing = 'slash'; p.anim.swingN++;
+    H.R.slashArc(p.x, p.z, base, ang, 0.4, R0, 0xf6ecd4, 0.3); H.R.slashArc(p.x, p.z, base, ang * 0.7, 0.4, R0 * 0.8, 0xcfd8e6, 0.24, 0.14);
+    H.R.burst(p.x + p.aimDX * R0 * 0.6, 0.8, p.z + p.aimDZ * R0 * 0.6, 0xe8ecf2, 16 * G.fxMul(p), 6, 0.3, 0.4, { dir: [p.aimDX, p.aimDZ] });
+    H.R.shake(0.18); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.05);
+    let hit = 0;
+    for (const e of G.enemies) {
+      if (e.dead || e.spawnK < 1) continue; const dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz);
+      if (d > R0 + e.r || Math.abs(H.angDiff(Math.atan2(dx, dz), base)) > ang + Math.atan2(e.r, Math.max(d, 0.1))) continue;
+      const [kx, kz] = H.norm(dx, dz); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: f.knock, phys: true, cone: true })); hit++;
+    }
+    if (hit) { H.audio.play('sword_hit', { heavy: true }); H.R.kickCam(p.aimDX, p.aimDZ, 0.12); }
   }, f.delay * 1000);
 };
 G.quickReady = (p, def, i) => def.role === 'attack' && i === 0 && (p.dashT > 0 || (p.dashChainT || 0) > 0) && (p.quickN || 0) < H.QUICK_ATTACK.max;
