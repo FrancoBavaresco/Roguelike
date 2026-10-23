@@ -1205,68 +1205,93 @@ R.vetArmor = {
 };
 /* The Veteran: a scarred, grey-bearded soldier, wearing only a plain tunic and trousers.
    His armour is a set of items (vet_*) drawn on him by R.dressRogue. */
+/* The Veteran: a stylised, chunky armoured knight (after the colour render): steel-teal plate over dark mail,
+   gold trims, a red tabard with a brown belt, a great helm with a red crest, brown gloves, gold sabatons, and
+   a red kite shield with a gold cross on the left arm. Two-bone arms (shoulder → elbow → hand) and knees. */
 R.makeKnight = function (accent) {
   const THREE = T3();
   const root = new THREE.Group(); const body = new THREE.Group(); root.add(body);
   const look = new THREE.Group(); body.add(look);
-  const skin = R.std(0xc89a7a, { roughness: 0.8, flatShading: false }), skinD = R.std(0xb08468, { roughness: 0.85, flatShading: false });
-  const tunic = new THREE.MeshStandardMaterial({ color: 0x8c7a5e, roughness: 1, metalness: 0, side: THREE.DoubleSide });
-  const pants = R.std(0x4c3e30, { roughness: 1, flatShading: false });
-  const hairM = R.std(0x6e6a64, { roughness: 1, flatShading: false });                // greying hair and beard
-  const rope = R.std(0x6a5038, { roughness: 1, flatShading: false });
+  const plate = R.std(0x5f8590, { roughness: 0.55, metalness: 0.15 }), plateD = R.std(0x46666f, { roughness: 0.6, metalness: 0.15 });
+  const mail = R.std(0x3c5860, { roughness: 0.8, metalness: 0.1 }), gold = R.std(0xe6ad22, { roughness: 0.45, metalness: 0.2 });
+  const red = R.std(0xb52a2c, { roughness: 0.9 }), redD = R.std(0x8e1f22, { roughness: 0.9 }), leather = R.std(0x8a5532, { roughness: 0.9 });
+  const glove = R.std(0x8a4f3a, { roughness: 0.9 }), slit = R.basic(0x0c1214), plume = R.std(0xd62a24, { roughness: 0.8 });
   const add = (geo, mat, x, y, z, parent) => part(geo, mat, x, y, z, parent || look);
-  // ---- legs: trousers to the shin, bare feet ----
+  const ring = (r, t, mat, x, y, z, parent, sz = 1) => { const o = add(new THREE.TorusGeometry(r, t, 5, 14), mat, x, y, z, parent); o.rotation.x = Math.PI / 2; o.scale.y = sz; return o; };
+  // ---- legs: hip pivot → thigh (mail) → knee (gold cop) → shin (greave) → gold sabaton ----
   const legs = [];
   for (const sx of [-1, 1]) {
-    const piv = new THREE.Group(); piv.position.set(sx * 0.14, 0.7, 0); body.add(piv);
-    add(new THREE.CylinderGeometry(0.095, 0.08, 0.34, 12), pants, 0, -0.17, 0, piv);
-    add(new THREE.CylinderGeometry(0.08, 0.07, 0.24, 12), pants, 0, -0.42, 0, piv);
-    const shin = add(new THREE.CylinderGeometry(0.06, 0.05, 0.16, 10), skin, 0, -0.58, 0, piv);
-    const foot = add(new THREE.SphereGeometry(0.08, 12, 8), skinD, 0, -0.66, -0.08, piv); foot.scale.set(0.9, 0.5, 1.75);
-    piv.userData.bare = [shin, foot];
+    const piv = new THREE.Group(); piv.position.set(sx * 0.15, 0.72, 0); body.add(piv);
+    add(new THREE.CylinderGeometry(0.11, 0.095, 0.38, 8), mail, 0, -0.17, 0, piv);
+    const knee = new THREE.Group(); knee.position.set(0, -0.36, 0); piv.add(knee);
+    add(new THREE.SphereGeometry(0.085, 8, 6), gold, 0, 0.0, -0.06, knee).scale.set(1, 0.9, 0.8);
+    add(new THREE.CylinderGeometry(0.1, 0.085, 0.28, 8), plate, 0, -0.16, 0, knee);
+    ring(0.098, 0.018, gold, 0, -0.03, 0, knee);
+    const boot = add(new THREE.BoxGeometry(0.17, 0.12, 0.3), gold, 0, -0.31, -0.05, knee); boot.scale.set(1, 1, 1);
+    add(new THREE.BoxGeometry(0.15, 0.06, 0.12), gold, 0, -0.29, -0.2, knee).rotation.x = 0.35;
+    piv.userData.knee = knee; piv.userData.bare = [];
     legs.push(piv);
   }
-  // ---- torso: broad chest under a coarse, belted tunic with short sleeves ----
-  { const tg = new THREE.CylinderGeometry(0.31, 0.27, 0.62, 28, 4); const a = tg.attributes.position.array; for (let i = 0; i < a.length; i += 3) { const ang = Math.atan2(a[i], a[i + 2]); const f = 1 + 0.03 * Math.sin(ang * 6 + a[i + 1] * 8); a[i] *= f; a[i + 2] *= f * 0.86; } tg.computeVertexNormals(); add(tg, tunic, 0, 1.28, 0); }
-  const skirt = new THREE.CylinderGeometry(0.28, 0.33, 0.36, 28, 2, true); { const a = skirt.attributes.position.array; for (let i = 0; i < a.length; i += 3) if (a[i + 1] < -0.1) a[i + 1] -= 0.03 * Math.abs(Math.sin(Math.atan2(a[i], a[i + 2]) * 4)); skirt.computeVertexNormals(); }
-  add(skirt, tunic, 0, 0.82, 0);
-  for (const sx of [-1, 1]) add(new THREE.SphereGeometry(0.13, 14, 10), tunic, sx * 0.3, 1.5, 0).scale.set(1, 0.8, 0.9);
-  add(new THREE.TorusGeometry(0.29, 0.018, 6, 24), rope, 0, 0.98, 0).rotation.x = Math.PI / 2;
-  add(new THREE.TorusGeometry(0.14, 0.025, 6, 18), R.std(0x6e5e46, { roughness: 1, flatShading: false }), 0, 1.6, -0.01).rotation.x = Math.PI / 2;
-  // ---- head: weathered face, short grey hair, cropped beard, a scar ----
-  const head = new THREE.Group(); head.position.set(0, 1.86, 0); body.add(head);
-  add(new THREE.CylinderGeometry(0.085, 0.095, 0.16, 12), skin, 0, -0.2, 0, head);
-  const skull = add(new THREE.SphereGeometry(0.205, 22, 16), skin, 0, 0, 0, head); skull.scale.set(0.95, 1.08, 1);
-  for (const sx of [-1, 1]) add(new THREE.SphereGeometry(0.04, 10, 8), skin, sx * 0.195, 0, 0.02, head).scale.set(0.5, 1, 0.8);
-  add(new THREE.SphereGeometry(0.038, 12, 8), skinD, 0, -0.015, -0.205, head).scale.set(0.9, 1.15, 1.1);
-  const white = R.std(0xe8e2d4, { roughness: 0.5, flatShading: false }), iris = R.basic(0x3a4a52);
-  const eyes = [-1, 1].map(sx => { const g = new THREE.Group(); g.position.set(sx * 0.07, 0.035, -0.18); head.add(g); add(new THREE.SphereGeometry(0.03, 12, 8), white, 0, 0, 0, g).scale.set(1.2, 0.75, 0.6); add(new THREE.SphereGeometry(0.016, 10, 6), iris, 0, 0, -0.016, g); return g; });
-  const brows = [-1, 1].map(sx => { const b = add(new THREE.BoxGeometry(0.075, 0.02, 0.025), hairM, sx * 0.07, 0.075, -0.195, head); b.rotation.z = sx * 0.12; return b; });
-  const scar = add(new THREE.BoxGeometry(0.012, 0.12, 0.01), R.basic(0x8a4a42), 0.11, 0.03, -0.18, head); scar.rotation.z = 0.35;
-  const hair = add(new THREE.SphereGeometry(0.215, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.42), hairM, 0, 0.03, 0.02, head); hair.scale.set(1, 1.05, 1.05);
-  const back = add(new THREE.SphereGeometry(0.19, 16, 10), hairM, 0, -0.01, 0.07, head); back.scale.set(1.04, 0.95, 0.85);
-  const beardGeo = new THREE.SphereGeometry(0.16, 18, 12, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5);
-  const beard = add(beardGeo, hairM, 0, -0.04, -0.05, head); beard.scale.set(1.12, 1.0, 1.0);
-  const mous = add(new THREE.BoxGeometry(0.1, 0.022, 0.03), hairM, 0, -0.06, -0.2, head);
-  // ---- arms: bare skin (scaled to reach), wrists; hands are fists ----
-  const arms = [];
+  // ---- hips and waist: plate skirt, mail belly, brown belt with a gold buckle ----
+  add(new THREE.CylinderGeometry(0.29, 0.34, 0.24, 8, 1, true), plateD, 0, 0.78, 0);
+  add(new THREE.CylinderGeometry(0.27, 0.29, 0.22, 8), mail, 0, 1.0, 0).scale.z = 0.85;
+  ring(0.3, 0.04, leather, 0, 0.94, 0, look, 1); look.children[look.children.length - 1].scale.set(1, 1, 0.82);
+  add(new THREE.BoxGeometry(0.12, 0.1, 0.04), gold, 0, 0.94, -0.265);
+  // ---- chest: broad plate, the red tabard over it (upper part on the chest, the skirt flap swings with the legs) ----
+  { const cg = new THREE.CylinderGeometry(0.34, 0.28, 0.5, 8); add(cg, plate, 0, 1.33, 0).scale.set(1, 1, 0.78); }
+  add(new THREE.BoxGeometry(0.4, 0.42, 0.03), red, 0, 1.18, -0.255).rotation.x = -0.12;
+  add(new THREE.BoxGeometry(0.4, 0.42, 0.03), red, 0, 1.18, 0.245).rotation.x = 0.1;
+  const flapF = new THREE.Group(); flapF.position.set(0, 0.95, -0.27); body.add(flapF);
+  add(new THREE.BoxGeometry(0.34, 0.5, 0.025), red, 0, -0.25, 0, flapF); add(new THREE.BoxGeometry(0.34, 0.05, 0.03), gold, 0, -0.5, 0, flapF);
+  const flapB = new THREE.Group(); flapB.position.set(0, 0.95, 0.26); body.add(flapB);
+  add(new THREE.BoxGeometry(0.34, 0.48, 0.025), redD, 0, -0.24, 0, flapB);
+  // ---- gorget and pauldrons (big, gold-rimmed) ----
+  add(new THREE.CylinderGeometry(0.16, 0.2, 0.12, 8), plateD, 0, 1.62, 0);
   for (const sx of [-1, 1]) {
-    const piv = new THREE.Group(); piv.position.set(sx * 0.36, 1.52, 0); body.add(piv);
-    const sleeve = add(new THREE.CylinderGeometry(0.06, 0.07, 1, 12), skin, 0, -0.5, 0, piv);
-    add(new THREE.CylinderGeometry(0.105, 0.12, 0.22, 14, 1, true), tunic, 0, -0.08, 0, piv);       // short sleeve
-    const bracer = add(new THREE.CylinderGeometry(0.06, 0.055, 0.2, 12), skin, 0, -0.84, 0, piv);
-    const wrap = add(new THREE.TorusGeometry(0.06, 0.012, 4, 8), skinD, 0, -0.84, 0, piv); wrap.visible = false;
-    arms.push({ piv, sleeve, bracer, wrap, s: sx });
+    const pd = add(new THREE.SphereGeometry(0.2, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), plate, sx * 0.4, 1.53, 0); pd.scale.set(1.15, 0.85, 1.05); pd.rotation.z = -sx * 0.35;
+    const rim = ring(0.19, 0.03, gold, sx * 0.44, 1.5, 0); rim.scale.set(1.12, 0.9, 1); rim.rotation.y = -sx * 0.35;
+    const lame = add(new THREE.SphereGeometry(0.17, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), plateD, sx * 0.47, 1.38, 0); lame.scale.set(1, 0.6, 1); lame.rotation.z = -sx * 0.6;
+  }
+  // ---- head: great helm with an eye slit, gold rims and a red crest ----
+  const head = new THREE.Group(); head.position.set(0, 1.88, 0); body.add(head);
+  head.position.y = 1.84;
+  add(new THREE.CylinderGeometry(0.215, 0.23, 0.36, 10), plate, 0, 0.0, 0, head);
+  add(new THREE.CylinderGeometry(0.17, 0.215, 0.06, 10), plate, 0, 0.21, 0, head);
+  ring(0.232, 0.026, gold, 0, -0.17, 0, head); ring(0.217, 0.022, gold, 0, 0.18, 0, head);
+  add(new THREE.BoxGeometry(0.32, 0.045, 0.06), slit, 0, 0.04, -0.2, head);
+  add(new THREE.BoxGeometry(0.035, 0.17, 0.05), gold, 0, -0.08, -0.215, head);
+  for (let k = 0; k < 3; k++) { const c = add(new THREE.ConeGeometry(0.05 - k * 0.008, 0.22 - k * 0.03, 5), plume, 0, 0.31 + k * 0.03, 0.02 + k * 0.07, head); c.rotation.x = 0.25 + k * 0.35; }
+  // ---- arms: upper arm (mail) and forearm (plate bracer with gold rims) are posed by two-bone IK each frame ----
+  const UA = 0.32, FA = 0.33, arms = [];
+  for (const sx of [-1, 1]) {
+    const upper = new THREE.Group(); upper.position.set(sx * 0.4, 1.5, 0); body.add(upper);
+    add(new THREE.CylinderGeometry(0.085, 0.075, UA, 8), mail, 0, -UA / 2, 0, upper);
+    add(new THREE.SphereGeometry(0.08, 8, 6), plateD, 0, -UA, 0, upper);
+    const fore = new THREE.Group(); body.add(fore);
+    add(new THREE.CylinderGeometry(0.095, 0.08, 0.24, 8), plate, 0, -0.13, 0, fore);
+    ring(0.093, 0.02, gold, 0, -0.02, 0, fore); ring(0.082, 0.018, gold, 0, -0.25, 0, fore);
+    arms.push({ piv: upper, upper, fore, s: sx, UA, FA, sleeve: null });
   }
   const handMat = new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0 });
-  const mkHand = sx => { const h = part(new THREE.SphereGeometry(0.09, 6, 4), handMat.clone(), sx * 0.45, 1.05, -0.2, body); const f = add(new THREE.SphereGeometry(0.07, 12, 8), skin, 0, 0, 0, h); f.scale.set(1, 0.9, 1.15); h.userData.bare = [f]; return h; };
+  const mkHand = sx => { const h = part(new THREE.SphereGeometry(0.09, 6, 4), handMat.clone(), sx * 0.45, 1.0, -0.2, body); const f = add(new THREE.BoxGeometry(0.11, 0.12, 0.13), glove, 0, 0, 0, h); f.rotation.y = 0.2; h.userData.bare = []; return h; };
   const hL = mkHand(-1), hR = mkHand(1);
-  const gL = R.glowSprite(accent, 0.5); gL.material.opacity = 0.55; hL.add(gL); const gR = R.glowSprite(accent, 0.5); gR.material.opacity = 0.55; hR.add(gR);
+  const gL = R.glowSprite(accent, 0.5); gL.material.opacity = 0.0; hL.add(gL); const gR = R.glowSprite(accent, 0.5); gR.material.opacity = 0.0; hR.add(gR);
+  // ---- kite shield on the left arm: red face, steel rim, gold cross ----
+  const shield = new THREE.Group(); hL.add(shield);
+  { const sh = new THREE.Shape(); sh.moveTo(-0.26, 0.3); sh.lineTo(0.26, 0.3); sh.lineTo(0.27, 0.0); sh.quadraticCurveTo(0.22, -0.28, 0, -0.46); sh.quadraticCurveTo(-0.22, -0.28, -0.27, 0.0); sh.closePath();
+    const face = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.012, bevelSegments: 1 }), red); face.castShadow = true; shield.add(face);
+    const rimG = new THREE.ExtrudeGeometry(sh, { depth: 0.03, bevelEnabled: false }); const rm = new THREE.Mesh(rimG, plate); rm.scale.set(1.12, 1.1, 1); rm.position.set(0, -0.005, -0.02); shield.add(rm);
+    // a broad cross with flared ends
+    const cv = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.38, 0.03), gold); cv.position.set(0, -0.03, 0.055); shield.add(cv);
+    const ch = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.11, 0.03), gold); ch.position.set(0, 0.03, 0.055); shield.add(ch);
+    for (const [x, y, w, h] of [[0, 0.17, 0.17, 0.05], [0, -0.23, 0.17, 0.05], [0.17, 0.03, 0.05, 0.17], [-0.17, 0.03, 0.05, 0.17]]) { const t = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.03), gold); t.position.set(x, y, 0.055); shield.add(t); }
+  }
+  shield.position.set(-0.07, 0.02, -0.04); shield.rotation.set(0, Math.PI + 0.55, 0);
   // ---- optional cloak (only when a cloak item is equipped) ----
-  const cloakGeo = new THREE.CylinderGeometry(0.34, 0.56, 1.45, 24, 8, true, -1.62, 3.24);
-  { const a = cloakGeo.attributes.position.array; for (let i = 0; i < a.length; i += 3) { const y = a[i + 1], h = (0.725 - y) / 1.45, ang = Math.atan2(a[i], a[i + 2]); a[i] *= 0.95; a[i + 2] = a[i + 2] * 0.75 + 0.1 + h * 0.2; a[i + 1] = y - Math.abs(Math.sin(ang)) * h * 0.06; } cloakGeo.computeVertexNormals(); }
+  const cloakGeo = new THREE.CylinderGeometry(0.36, 0.56, 1.4, 24, 8, true, -1.62, 3.24);
+  { const a = cloakGeo.attributes.position.array; for (let i = 0; i < a.length; i += 3) { const y = a[i + 1], h = (0.7 - y) / 1.4, ang = Math.atan2(a[i], a[i + 2]); a[i] *= 0.98; a[i + 2] = a[i + 2] * 0.75 + 0.14 + h * 0.2; a[i + 1] = y - Math.abs(Math.sin(ang)) * h * 0.06; } cloakGeo.computeVertexNormals(); }
   const capeMat = new THREE.MeshStandardMaterial({ color: 0x2c2826, roughness: 1, side: THREE.DoubleSide });
-  const cloak = part(cloakGeo, capeMat, 0, 0.9, 0.06, body); cloak.visible = false;
+  const cloak = part(cloakGeo, capeMat, 0, 0.92, 0.06, body); cloak.visible = false;
   const base = cloakGeo.attributes.position.array.slice();
   const mantle = part(new THREE.CylinderGeometry(0.3, 0.5, 0.3, 12, 1, true, Math.PI + 0.36, Math.PI * 2 - 0.72), capeMat.clone(), 0, 1.55, 0.02, body); mantle.visible = false;
   const brooch = new THREE.Group(); body.add(brooch); brooch.visible = false;
@@ -1279,12 +1304,9 @@ R.makeKnight = function (accent) {
   const ward = new THREE.Mesh(new THREE.IcosahedronGeometry(1.2, 1), new THREE.MeshStandardMaterial({ color: 0x9fe8ff, emissive: 0x3aa8d8, emissiveIntensity: 0.6, transparent: true, opacity: 0.35, flatShading: true, depthWrite: false })); ward.position.y = 1.0; ward.visible = false; root.add(ward);
   const bastion = new THREE.Mesh(new THREE.DodecahedronGeometry(1.1, 0), new THREE.MeshStandardMaterial({ color: 0xd99b5f, emissive: 0x6a3a10, emissiveIntensity: 0.5, transparent: true, opacity: 0.5, flatShading: true, depthWrite: false })); bastion.position.y = 1.0; bastion.visible = false; root.add(bastion);
   const mirror = new THREE.Mesh(new THREE.TorusGeometry(1.45, 0.05, 4, 32), new THREE.MeshBasicMaterial({ color: 0xbb80ff, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending })); mirror.rotation.x = Math.PI / 2; mirror.position.y = 1; mirror.visible = false; root.add(mirror);
-  body.scale.setScalar(1.06);
+  body.scale.setScalar(1.04);
   R.ents.add(root);
-  // tunic pieces a chest armour covers (they would poke through the cuirass and pauldrons when the body twists)
-  const hideWithChest = [];
-  body.traverse(o => { if (!o.isMesh) return; const wp = o.parent === body || o.parent === look ? o.position.y : 9; if ((o.material === tunic && (o.parent !== body && o.parent !== look ? true : wp > 1.0)) || (wp > 1.55 && wp < 1.65 && o.geometry && o.geometry.type === 'TorusGeometry')) hideWithChest.push(o); });
-  const m = { kind: 'knight', hideWithChest, look, rig: { torsoR: 0.31, shoulderX: 0.36, shoulderY: 1.52, waistY: 0.98 }, hideWithHelm: head.children.slice(1), capeMat, cloakBase: 0x2c2826, root, body, cloak, cloakGeo, base, aL: null, aR: null, auraCol: accent, mantle, hood: null, head, legs, arms, strap: null, brooch, bGlow: null, hL, hR, gL, gR, book, sig, light, ward, bastion, mirror, accent, eyes, cloth: tunic, castT: 0, castSide: 1, t: Math.random() * 10, walk: 0, lvx: 0, lvz: 0 };
+  const m = { kind: 'knight', armoured: true, hideWithChest: [], look, rig: { torsoR: 0.34, shoulderX: 0.4, shoulderY: 1.5, waistY: 0.95 }, hideWithHelm: [], capeMat, cloakBase: 0x2c2826, root, body, cloak, cloakGeo, base, aL: null, aR: null, auraCol: accent, mantle, hood: null, head, legs, arms, strap: null, brooch, bGlow: null, hL, hR, gL, gR, book, sig, light, ward, bastion, mirror, accent, eyes: [], cloth: red, shield, flapF, flapB, castT: 0, castSide: 1, t: Math.random() * 10, walk: 0, lvx: 0, lvz: 0 };
   if (H.models && H.models.has('knight')) { const inst = H.models.acquire('knight'); if (inst) { body.traverse(o => { if (o.isMesh && o !== hL && o !== hR) o.visible = false; }); body.add(inst.obj); m.glb = inst; m.glbInst = inst; m.anim = inst.anim; } }
   return m;
 };
@@ -1304,14 +1326,15 @@ R.dressRogue = function (m, equip) {
   (m.hideWithHelm || []).forEach(o => o.visible = true); (m.hideWithChest || []).forEach(o => o.visible = true);
   for (const piv of m.legs || []) { if (piv.userData.boot && m.kind !== 'knight') piv.userData.boot.visible = true; (piv.userData.bare || []).forEach(o => o.visible = true); }
   for (const hd of [m.hL, m.hR]) (hd && hd.userData.bare || []).forEach(o => o.visible = true);
-  const vet = (slot) => { const it = equip[slot] && H.ITEMS[equip[slot]]; if (it && it.vet && R.vetArmor[slot]) { (m.gearObjs = m.gearObjs || []).push(...R.vetArmor[slot](m)); return true; } return false; };
+  // the armoured Veteran already wears his full harness: armour items change his stats, not his look
+  const vet = (slot) => { if (m.armoured) return true; const it = equip[slot] && H.ITEMS[equip[slot]]; if (it && it.vet && R.vetArmor[slot]) { (m.gearObjs = m.gearObjs || []).push(...R.vetArmor[slot](m)); return true; } return false; };
   const vH = vet('head'), vC = vet('chest'), vL = vet('legs'), vF = vet('feet');
   if (vC) (m.hideWithChest || []).forEach(o => o.visible = false);
   const add = (parent, mesh) => { parent.add(mesh); mesh.castShadow = true; m.gearObjs.push(mesh); return mesh; };
   const mat = (col, metal) => R.metalize(new THREE.MeshStandardMaterial({ color: col, roughness: metal ? 0.42 : 0.85, metalness: metal ? 0.6 : 0.05, flatShading: true }), metal ? 1.1 : 0.35);
   const it = s => equip[s] && H.ITEMS[equip[s]];
   const head = it('head');
-  if (head && !vH) {
+  if (head && !vH && !m.armoured) {
     const c = new THREE.Color(head.col).getHex();
     if (head.icon === 'it_helm') { const mm = mat(0x9aa0aa, true); add(m.head, new THREE.Mesh(new THREE.SphereGeometry(0.29, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.52), mm)).position.y = 0.04; const br = add(m.head, new THREE.Mesh(new THREE.TorusGeometry(0.29, 0.03, 4, 14), mm)); br.rotation.x = Math.PI / 2; br.position.y = 0.04; add(m.head, new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.05), mm)).position.set(0, -0.02, -0.28); }
     else if (head.icon === 'it_hat') { const mm = mat(c); const brim = add(m.head, new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.035, 16), mm)); brim.position.y = 0.2; const cone = add(m.head, new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.62, 10), mm)); cone.position.set(0, 0.52, 0.06); cone.rotation.x = 0.35; const band = add(m.head, new THREE.Mesh(new THREE.CylinderGeometry(0.235, 0.24, 0.07, 12), mat(0xd9a441, true))); band.position.y = 0.26; }
@@ -1320,7 +1343,7 @@ R.dressRogue = function (m, equip) {
   const chest = it('chest');
   // generic armour is sized from the rig, so it fits both Percy's narrow frame and the Veteran's broad one
   const rg = m.rig || { torsoR: 0.25, shoulderX: 0.29, shoulderY: 1.5, waistY: 1.06 }, tk = rg.torsoR / 0.25;
-  if (chest && !vC) {
+  if (chest && !vC && !m.armoured) {
     const c = new THREE.Color(chest.col).getHex();
     if (chest.icon === 'it_robe') { const rb = add(m.body, new THREE.Mesh(new THREE.CylinderGeometry(0.265 * tk * 1.06, 0.4 * tk, 1.05, 12), mat(c))); rb.position.y = 1.0; const tr = add(m.body, new THREE.Mesh(new THREE.TorusGeometry(0.4 * tk, 0.025, 4, 16), mat(0xd9a441, true))); tr.rotation.x = Math.PI / 2; tr.position.y = 0.48; }
     else {
@@ -1334,12 +1357,12 @@ R.dressRogue = function (m, equip) {
   }
   const lk = m.kind === 'knight' ? 1.3 : 1, g0 = m.gearObjs.length;
   const legsIt = it('legs');
-  if (legsIt && !vL) for (const piv of m.legs) {
+  if (legsIt && !vL && !m.armoured) for (const piv of m.legs) {
     if (legsIt.icon === 'it_greaves') { const mm = mat(0x9aa0aa, true); add(piv, new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.34, 6), mm)).position.y = -0.43; add(piv, new THREE.Mesh(new THREE.SphereGeometry(0.075, 6, 5), mm)).position.set(0, -0.27, -0.06); }
     else add(piv, new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.078, 0.34, 6), mat(new THREE.Color(legsIt.col).getHex()))).position.y = -0.16;
   }
   const feet = it('feet');
-  if (feet && !vF) for (const piv of m.legs) { const b = add(piv, new THREE.Mesh(new THREE.BoxGeometry(0.185, 0.15, 0.35), mat(new THREE.Color(feet.col).getHex(), feet.id === 'hobnail_boots'))); b.position.set(0, -0.6, -0.07); if (feet.id === 'strider_boots') { b.material.emissive = new THREE.Color(0x1a6a8a); b.material.emissiveIntensity = 0.4; } }
+  if (feet && !vF && !m.armoured) for (const piv of m.legs) { const b = add(piv, new THREE.Mesh(new THREE.BoxGeometry(0.185, 0.15, 0.35), mat(new THREE.Color(feet.col).getHex(), feet.id === 'hobnail_boots'))); b.position.set(0, -0.6, -0.07); if (feet.id === 'strider_boots') { b.material.emissive = new THREE.Color(0x1a6a8a); b.material.emissiveIntensity = 0.4; } }
   // main weapon in the right hand (only the Veteran can wield them)
   m.sword = null;
   const wpn = it('weapon');
@@ -1351,6 +1374,7 @@ R.dressRogue = function (m, equip) {
   if (m.capeMat) m.capeMat.color.copy(cc); if (m.mantle) m.mantle.material.color.copy(cc);
   if (m.cloak) m.cloak.visible = !!cloak; if (m.mantle) m.mantle.visible = !!cloak; if (m.brooch) m.brooch.visible = !!cloak;
   if (m.kind === 'knight' && m.mantle) m.mantle.visible = false;
+  if (m.shield) m.shield.visible = !m.twoHand;
   for (const g of m.gearObjs) R.toonify(g);
   if (m.capeMat) { m.capeMat.emissive = new THREE.Color(cloak && cloak.id === 'ember_mantle' ? 0x4a1004 : 0x000000); }
 };
@@ -1365,6 +1389,8 @@ R.buildWeapon = function (wpn) {
   const gripM = new THREE.MeshStandardMaterial({ color: tier === 3 ? 0x1c1418 : 0x3a2618, roughness: 0.9, flatShading: true });
   const wood = new THREE.MeshStandardMaterial({ color: [0x7a5a3a, 0x5e4430, 0x2a1e18, 0x2a1e18][tier], roughness: 0.85, flatShading: true });
   R.metalize(steel, 1.2); R.metalize(guardM, 1.0);
+  // the plain sword family follows the Veteran's painted look: pale-blue blade, gold guard and pommel, brown leather grip
+  if (wpn.weapon === 'sword') { steel.color.setHex([0xa8d4e4, 0xbde2ef, 0xd4eef7, 0xd4eef7][tier]); steel.metalness = 0.25; steel.roughness = 0.35; guardM.color.setHex(tier === 2 ? 0xf2c23a : 0xe6ad22); guardM.metalness = 0.2; gripM.color.setHex(0x6b3f22); }
   const outer = new THREE.Group(), inner = new THREE.Group(); outer.add(inner);
   const mk = (geo, mat, y, x = 0, z = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.castShadow = true; inner.add(o); return o; };
   const kind = wpn.weapon;
@@ -1532,7 +1558,8 @@ R.animateRogue = function (m, p, dt) {
   // walk blend: strides fade in and out instead of switching on/off
   m.mk = (m.mk || 0) + (Math.min(1, speed / 6) - (m.mk || 0)) * (1 - Math.exp(-dt * 22));
   const mk = m.mk;
-  m.walk += dt * Math.min(13, 5.5 + speed * 1.1) * Math.min(1, mk * 1.6);
+  // the armoured Veteran's stride follows his ground speed, so his feet don't skate
+  m.walk += dt * (m.armoured ? Math.min(22, 3 + speed * 2.4) : Math.min(13, 5.5 + speed * 1.1)) * Math.min(1, mk * 1.6);
   const ph = m.walk, stride = Math.sin(ph) * mk;
   // attack / action pose (all additive, smoothed so nothing pops)
   const ct0 = m.castT || 0;
@@ -1550,6 +1577,8 @@ R.animateRogue = function (m, p, dt) {
   const ck = m.chargeK || 0;
   if (ck > 0 || (p.charge && m.sword)) { const kk = Math.max(0.35, ck), tr = ck >= 1 ? Math.sin(m.t * 40) * 0.015 : 0; T.yaw = -0.5 * kk + tr; T.pitch = 0.08 * kk; T.dip = -0.13 * kk; T.l0 = 0.42 * kk; T.l1 = -0.3 * kk; T.roll = -0.04 * kk; }
   if (p.dashT > 0) { T.pitch -= 0.22; T.dip -= 0.05; T.l0 = 0.55; T.l1 = -0.65; }
+  // landing out of a dash: a short dip that eases back (only for the armoured rig)
+  if (m.armoured) { if (m._dashing && !(p.dashT > 0)) m.landT = 0.22; m._dashing = p.dashT > 0; if (m.landT > 0) { m.landT = Math.max(0, m.landT - dt); const k = m.landT / 0.22; T.dip -= 0.09 * k; T.pitch -= 0.08 * k; } }
   if (p.hurtT > 0) { T.pitch += 0.22; T.roll += 0.06; }
   m.ap = m.ap || { yaw: 0, pitch: 0, dip: 0, roll: 0, l0: 0, l1: 0 };
   const ka = 1 - Math.exp(-dt * 22); for (const kk in T) m.ap[kk] += (T[kk] - m.ap[kk]) * ka;
@@ -1562,7 +1591,7 @@ R.animateRogue = function (m, p, dt) {
   const bob = (1 - Math.abs(Math.sin(ph))) * 0.055 * mk - 0.025 * mk + Math.sin(m.t * 2.2) * 0.012 * (1 - mk);
   m.body.position.y = bob + A.dip + (p.downed ? -0.6 : 0);
   const fwdLean = H.clamp(m.lvz * 0.02, -0.2, 0.12);
-  m.body.rotation.x = fwdLean + A.pitch;
+  m.body.rotation.x = fwdLean + A.pitch + (m.armoured ? H.clamp((m.acc || 0) * 0.004, -0.1, 0.1) : 0);
   m.body.rotation.z = H.clamp(-m.lvx * 0.02, -0.16, 0.16) + Math.sin(ph) * 0.035 * mk + A.roll;
   if (p.downed) m.body.rotation.x = 1.2;
   // legs: swing, plus a knee-lift on the leg that is travelling forward; blend toward stance poses
@@ -1573,6 +1602,10 @@ R.animateRogue = function (m, p, dt) {
       const lift = Math.max(0, Math.cos(ph) * sgn) * 0.07 * mk;
       L.rotation.x = sw2 * 0.6 * mk + (i === 0 ? A.l0 : A.l1);
       L.position.y = L.userData.y0 + lift;
+      // knee: bends while the leg travels forward, stays soft at rest, folds deeper in a dash
+      const kn = L.userData.knee;
+      if (kn) { const fwd = Math.max(0, Math.cos(ph) * sgn); const bend = 0.08 + (0.15 + 0.9 * fwd) * 0.95 * mk + (p.dashT > 0 ? (i === 0 ? 0.55 : 0.85) : 0) + Math.max(0, -(i === 0 ? A.l0 : A.l1)) * 0.6;
+        kn.userData.b = (kn.userData.b || 0) + (bend - (kn.userData.b || 0)) * (1 - Math.exp(-dt * 30)); kn.rotation.x = -kn.userData.b; }
     }
   }
   // cloak cloth: trails opposite movement, flares on dashes, ripples at the hem
@@ -1593,6 +1626,9 @@ R.animateRogue = function (m, p, dt) {
     }
     pos.needsUpdate = true; m.cloakGeo.computeVertexNormals();
   }
+  // tabard flaps: pushed by the legs, trailing a little behind
+  if (m.flapF) { const l0 = m.legs[0].rotation.x, l1 = m.legs[1].rotation.x; const tf = Math.max(0, l0, l1) * 0.85 + H.clamp(m.lvz * 0.012, -0.05, 0.25), tb = Math.min(0, l0, l1) * 0.45 - H.clamp(-m.lvz * 0.01, -0.05, 0.12);
+    const kf = 1 - Math.exp(-dt * 14); m.flapF.rotation.x += (tf - m.flapF.rotation.x) * kf; m.flapB.rotation.x += (tb - m.flapB.rotation.x) * kf; }
   if (m.strap) m.strap.rotation.x = H.clamp(m.lvz * 0.05, -0.5, 0.5) + stride * 0.08;
   if (m.head) m.head.rotation.y = Math.sin(m.t * 0.7) * 0.08;
   // hands: idle float or cast thrust
@@ -1634,6 +1670,7 @@ R.animateRogue = function (m, p, dt) {
     if (!_q.a) { _q.a = new THREE.Vector3(); _q.b = new THREE.Vector3(0, -1, 0); _q.up = new THREE.Vector3(); }
     for (const arm of m.arms) {
       const hand = arm.s < 0 ? m.hL : m.hR;
+      if (arm.fore) { R.armIK(arm, hand.position); continue; }
       _q.a.set(hand.position.x - arm.piv.position.x, hand.position.y - arm.piv.position.y, hand.position.z - arm.piv.position.z);
       const len = Math.max(0.3, _q.a.length() - 0.08); _q.a.normalize();
       arm.piv.quaternion.setFromUnitVectors(_q.b, _q.a);
@@ -1654,6 +1691,18 @@ R.animateRogue = function (m, p, dt) {
   m.root.visible = !(p.invulnBlink > 0 && Math.floor(m.t * 20) % 2 === 0);
   m.light.intensity = 1.0 + ct * 2;
   if (m.anim && H.models) { const sw = m.swingT > 0 && m.swing && m.anim.actions[m.swing] ? m.swing : null; const clip = p.dead || p.downed ? 'death' : p.hurtT > 0 ? 'hurt' : p.dashT > 0 ? 'dash' : sw || (ct > 0.3 ? 'cast' : moving ? 'run' : 'idle'); H.models.play(m.anim, clip); m.anim.mixer.update(dt); }
+};
+/* Two-bone arm: shoulder (upper.position) → elbow → hand target, elbow pushed out and back. All in body space. */
+R.armIK = function (arm, target) {
+  const THREE = T3(); const q = R._ik || (R._ik = { d: new THREE.Vector3(), pole: new THREE.Vector3(), e: new THREE.Vector3(), u: new THREE.Vector3(), down: new THREE.Vector3(0, -1, 0) });
+  const S = arm.upper.position, a = arm.UA, b = arm.FA;
+  q.d.subVectors(target, S); let d = q.d.length(); q.d.normalize();
+  const reach = Math.min(d, a + b - 0.002), x = (a * a - b * b + reach * reach) / (2 * reach), h = Math.sqrt(Math.max(0, a * a - x * x));
+  q.pole.set(arm.s * 0.9, -0.35, 0.55); q.pole.addScaledVector(q.d, -q.pole.dot(q.d)); if (q.pole.lengthSq() < 1e-6) q.pole.set(arm.s, 0, 0); q.pole.normalize();
+  q.e.copy(S).addScaledVector(q.d, x).addScaledVector(q.pole, h);
+  q.u.subVectors(q.e, S).normalize(); arm.upper.quaternion.setFromUnitVectors(q.down, q.u);
+  arm.fore.position.copy(q.e); q.u.subVectors(target, q.e); const fl = q.u.length(); q.u.normalize(); arm.fore.quaternion.setFromUnitVectors(q.down, q.u);
+  arm.fore.scale.y = Math.max(0.85, Math.min(1.25, fl / b));
 };
 R.setRogueElement = function (m, el) {
   const c = H.EL[el] ? H.EL[el].color : m.accent;
@@ -2107,5 +2156,5 @@ R.update = function (dt, gameDt) {
 R.render = function () { R.renderer.render(R.scene, R.camera); };
 
 /* Characters get the illustrated look as they are built (heroes, enemies, bosses, menu and inventory previews). */
-for (const k of ['makeHero', 'makeEnemy', 'makeBoss']) { const base = R[k]; R[k] = function () { const m = base.apply(R, arguments); R.toonify(m.root, m, { outline: false }); if (k !== 'makeHero') R.bakeModel(m); if (H.settings.quality === 'high' && H.settings.look !== 'classic') R.addOutline(m.root, k === 'makeHero' ? 0.16 : 0.3); return m; }; }
+for (const k of ['makeHero', 'makeEnemy', 'makeBoss']) { const base = R[k]; R[k] = function () { const m = base.apply(R, arguments); R.toonify(m.root, m, { outline: false }); if (k !== 'makeHero' || m.armoured) R.bakeModel(m); if (H.settings.quality === 'high' && H.settings.look !== 'classic') R.addOutline(m.root, k === 'makeHero' ? 0.16 : 0.3); return m; }; }
 
