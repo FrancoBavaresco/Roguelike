@@ -637,7 +637,7 @@ G.tryCast = function (p, i, quiet) {
     p.quickN = (p.quickN || 0) + 1; const last = p.quickN >= H.QUICK_ATTACK.max;
     p.dashChainT = last ? 0 : Math.max(p.dashChainT || 0, H.QUICK_ATTACK.window);
     if (!last) { s.cd = Math.min(s.cd, H.QUICK_ATTACK.cd); s.maxCd = s.cd; }
-    if (!(def.kind === 'melee' && def.charge)) { st.dmg = Math.round(st.dmg * H.QUICK_ATTACK.dmgMul); H.R.ring(p.x, p.z, 0xf2ead8, 0.3, 1.6, 0.25, 0.1, 0.8, 0.1); }
+    if (!(def.kind === 'melee' && def.charge)) { st.dmg = Math.round(st.dmg * H.QUICK_ATTACK.dmgMul); if (!def.quick) H.R.ring(p.x, p.z, 0xf2ead8, 0.3, 1.6, 0.25, 0.1, 0.8, 0.1); }
     G.float(p.x, 2.6, p.z, H.t('QUICK ATTACK') + ' ' + p.quickN + '/' + H.QUICK_ATTACK.max, p.quickN === H.QUICK_ATTACK.max ? 'big gold' : 'big');
   }
   G.quick = quick;
@@ -711,7 +711,10 @@ G.SPELL = {
       for (const e of G.enemiesNear(p.x, p.z, R0)) { const [kx, kz] = H.norm(e.x - p.x, e.z - p.z); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: ch.knock, interrupt: true, phys: true, blunt: def.dtype === 'blunt' })); }
       return;
     }
-    const R0 = st.range, ang = def.angle * Math.PI / 360; let hit = 0;
+    // a weapon with its own Quick Attack shape (the sword: a fast, narrow 45° cut straight ahead)
+    const qa = G.quick && def.quick;
+    const R0 = st.range * (qa ? def.quick.rangeMul || 1 : 1), ang = (qa ? def.quick.angle : def.angle) * Math.PI / 360; let hit = 0;
+    if (qa) { H.R.slashArc(p.x, p.z, base, ang, 0.4, R0, 0xf6ecd4, 0.18); H.R.slashArc(p.x, p.z, base, ang * 0.6, 0.4, R0 * 0.8, 0xcfd8e6, 0.14, 0.14); }
     for (const e of G.enemies) {
       if (e.dead || e.spawnK < 1) continue; const dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz);
       if (d > R0 + e.r || Math.abs(H.angDiff(Math.atan2(dx, dz), base)) > ang + Math.atan2(e.r, Math.max(d, 0.1))) continue;
