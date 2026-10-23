@@ -288,7 +288,7 @@ for (const [src, id, name] of [['sword_thrust', 'bastard_thrust', 'Long Thrust']
 H.SPELLS.bastard_execute = { id: 'bastard_execute', stam: 30, ups: { dmg: 0.25, cd: 0.12 }, weapon: 'bastard', dtype: 'slash', hero: 'knight', name: 'Execution', el: 'stone', role: 'attack', kind: 'execute', glyph: 'k_execute', ult: true, cd: 14, charges: 3, cost: 0, range: 3.8, dmg: 95, angle: 80, swing: 'slash', sfx: 'sword',
   desc: s => `ULTIMATE · 3 charges. A devastating cut on one foe: ${s.dmg} damage, Broken and Bleeding. If it kills in one hit, the charge comes straight back.` };
 /* Quick Attack: the basic attack used during a dash or right after it (weapons with a dash strike of their own use it) */
-H.QUICK_ATTACK = { dmgMul: 1.4 };
+H.QUICK_ATTACK = { dmgMul: 1.4, max: 3, cd: 0.08, window: 0.35 };
 H.SPELLS.fist_strike = { id: 'fist_strike', stam: 6, ups: { range: 0.25, dmg: 0.2 }, dtype: 'blunt', hero: 'knight', name: 'Fist Strike', el: 'stone', role: 'attack', kind: 'melee', glyph: 'k_fist', cd: 0.38, cost: 0, range: 1.9, dmg: 9, angle: 110, knock: 2.5,
   charge: { window: 0.35, dmgMul: 1.9, radius: 2.6, knock: 7 },
   desc: s => `A quick punch: ${s.dmg} damage to foes right in front of you. Strike while dashing, or just after, for a charged blow: ${Math.round(s.dmg * 1.9)} damage all around you.` };

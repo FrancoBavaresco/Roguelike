@@ -552,7 +552,9 @@ G.dash = function (p, it) {
   if (Math.hypot(dx, dz) < 0.2) { dx = p.aimDX; dz = p.aimDZ; if (p.src === 'kbm' && !(Math.hypot(dx, dz) > 0)) { dx = 0; dz = -1; } }
   [dx, dz] = H.norm(dx, dz);
   p.dashCharges--; p.dashT = 0.17; p.dashDX = dx; p.dashDZ = dz; p.dashSpeed = 34; p.iframes = 0.24 + ((p.gear && p.gear.iframes) || 0);
-  p.dashImmune = true; p.dashExt = 0;   // immune to everything while the dash lasts, unless the hero attacks or casts during it
+  p.dashImmune = true; p.dashExt = 0; p.quickN = 0;
+  // the dash cancels the basic attack's recovery: the first Quick Attack is ready straight away
+  if (p.spells[0] && H.SPELLS[p.spells[0].id].role === 'attack') p.spells[0].cd = Math.min(p.spells[0].cd, H.QUICK_ATTACK.cd);   // immune to everything while the dash lasts, unless the hero attacks or casts during it
   p.tempoT = p.charms.has('tempo_loop') ? 1.5 : 0;
   H.audio.play('dash'); H.R.kickCam(dx, dz, 0.25);
   H.R.burst(p.x, 0.4, p.z, p.color, 12, 4, 0.4, 0.4, { flat: true });
@@ -619,9 +621,17 @@ G.tryCast = function (p, i, quiet) {
   // casting or attacking mid-dash: allowed, but the hero is no longer immune for the rest of the dash
   if (p.dashT > 0 && p.dashImmune) { p.dashImmune = false; p.iframes = 0; }
   // attacking during a dash or right after it is a Quick Attack (weapons with their own dash strike handle it in melee())
-  const quick = def.role === 'attack' && i === 0 && (p.dashT > 0 || (p.dashChainT || 0) > 0) && !(def.kind === 'melee' && def.charge);
-  if (quick) { st.dmg = Math.round(st.dmg * H.QUICK_ATTACK.dmgMul); p.dashChainT = 0; G.float(p.x, 2.6, p.z, H.t('QUICK ATTACK'), 'big'); H.R.ring(p.x, p.z, 0xf2ead8, 0.3, 1.6, 0.25, 0.1, 0.8, 0.1); }
-  G.md = md; G.SPELL[def.kind](p, def, st); G.md = {};
+  // up to 3 Quick Attacks in a row (H.QUICK_ATTACK.max): each one keeps the window open and leaves almost no cooldown
+  const quick = G.quickReady(p, def, i);
+  if (quick) {
+    p.quickN = (p.quickN || 0) + 1; const last = p.quickN >= H.QUICK_ATTACK.max;
+    p.dashChainT = last ? 0 : Math.max(p.dashChainT || 0, H.QUICK_ATTACK.window);
+    if (!last) { s.cd = Math.min(s.cd, H.QUICK_ATTACK.cd); s.maxCd = s.cd; }
+    if (!(def.kind === 'melee' && def.charge)) { st.dmg = Math.round(st.dmg * H.QUICK_ATTACK.dmgMul); H.R.ring(p.x, p.z, 0xf2ead8, 0.3, 1.6, 0.25, 0.1, 0.8, 0.1); }
+    G.float(p.x, 2.6, p.z, H.t('QUICK ATTACK') + ' ' + p.quickN + '/' + H.QUICK_ATTACK.max, p.quickN === H.QUICK_ATTACK.max ? 'big gold' : 'big');
+  }
+  G.quick = quick;
+  G.md = md; G.SPELL[def.kind](p, def, st); G.md = {}; G.quick = false;
   if (p.lungeT > 0 && p.dashT > 0) { p.dashT = 0; p.dashExt = 0; p.dashTrail = null; p.dashFx = null; }   // a lunge takes over the dash's movement
   G.emit('cast', { p, slot: i, id: s.id });
   if (G.tut) G.tutEvent('cast', { slot: i, id: s.id });
@@ -670,8 +680,7 @@ G.SPELL = {
   },
   melee(p, def, st) {
     // charged if used during a dash or within the window right after it
-    const ch = def.charge; const charged = !!ch && (p.dashT > 0 || (p.dashChainT || 0) > 0);
-    p.dashChainT = 0;
+    const ch = def.charge; const charged = !!ch && G.quick;
     const base = Math.atan2(p.aimDX, p.aimDZ), col = H.EL[def.el] ? H.EL[def.el].color : 0xcfc4ae;
     if (charged && def.weapon) {
       // rushing slash: a full-circle whirl of the blade out of the dash
@@ -682,7 +691,6 @@ G.SPELL = {
       H.R.shake(0.24); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.05);
       let hit = 0; for (const e of G.enemiesNear(p.x, p.z, R0)) { const [kx, kz] = H.norm(e.x - p.x, e.z - p.z); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: ch.knock, interrupt: true, phys: true, cone: true })); hit++; }
       if (hit) H.audio.play('sword_hit', { heavy: true });
-      G.float(p.x, 2.6, p.z, H.t('QUICK ATTACK'), 'big');
       return;
     }
     if (charged) {
@@ -691,7 +699,6 @@ G.SPELL = {
       H.R.burst(p.x, 0.4, p.z, col, 36 * G.fxMul(p), 9, 0.45, 0.5, { flat: true, palette: [0xe8dcc4, 0xa89c84, 0x6e6a64] }); H.R.decal(p.x, p.z, 0x8a7a64, R0 * 0.7, 2.5);
       H.R.shake(0.28); H.audio.play('punch_heavy'); G.hitstop = Math.max(G.hitstop, 0.06);
       for (const e of G.enemiesNear(p.x, p.z, R0)) { const [kx, kz] = H.norm(e.x - p.x, e.z - p.z); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: ch.knock, interrupt: true, phys: true, blunt: def.dtype === 'blunt' })); }
-      G.float(p.x, 2.6, p.z, H.t('QUICK ATTACK'), 'big');
       return;
     }
     const R0 = st.range, ang = def.angle * Math.PI / 360; let hit = 0;
@@ -1686,7 +1693,8 @@ G.buyItem = function (p, prop, i) {
 };
 /* ---------------- Equipment drops ---------------- */
 /* Stamina helpers (only heroes with useStam: the Veteran). Charged attacks out of a dash cost more. */
-G.stamCost = (p, def) => { if (!p.useStam || !def.stam) return 0; const charged = def.charge && (p.dashT > 0 || (p.dashChainT || 0) > 0); return Math.round(def.stam * (charged ? H.STAMINA.chargedMul : 1)); };
+G.quickReady = (p, def, i) => def.role === 'attack' && i === 0 && (p.dashT > 0 || (p.dashChainT || 0) > 0) && (p.quickN || 0) < H.QUICK_ATTACK.max;
+G.stamCost = (p, def) => { if (!p.useStam || !def.stam) return 0; const charged = def.charge && p.spells[0] && H.SPELLS[p.spells[0].id] === def && G.quickReady(p, def, 0); return Math.round(def.stam * (charged ? H.STAMINA.chargedMul : 1)); };
 G.spendStam = (p, n) => { p.stam = Math.max(0, p.stam - n); p.stamT = H.STAMINA.delay; };
 G.noStamina = (p, i) => { G.emit('deny', { p, slot: i, why: 'stamina' }); H.audio.play('ui_deny'); if (!(p.noStamFloatT > performance.now())) { G.float(p.x, 2.7, p.z, H.t('NO STAMINA'), 'small hurt'); p.noStamFloatT = performance.now() + 800; } p.stamFlash = 0.4; };
 /* Thrown weapons (Axe Throw): fly to a target, bounce to the nearest foe not hit yet, then return to the thrower. */
