@@ -452,7 +452,7 @@ G.updatePlayer = function (p, dt) {
   if (p.dead) return; // the view hides a dead hero
   const it = p.intent || { mx: 0, mz: 0, held: {}, pressed: {}, released: {} };
   // timers
-  p.iframes = Math.max(0, p.iframes - dt); p.invuln = Math.max(0, p.invuln - dt); p.hurtT = Math.max(0, p.hurtT - dt); p.dashChainT = Math.max(0, (p.dashChainT || 0) - dt); p.invulnBlink = Math.max(0, p.invulnBlink - dt);
+  p.iframes = Math.max(0, p.iframes - dt); p.invuln = Math.max(0, p.invuln - dt); p.hurtT = Math.max(0, p.hurtT - dt); p.dashChainT = Math.max(0, (p.dashChainT || 0) - dt); p.comboT = Math.max(0, (p.comboT || 0) - dt); p.invulnBlink = Math.max(0, p.invulnBlink - dt);
   p.bastionT = Math.max(0, p.bastionT - dt); p.mirrorT = Math.max(0, p.mirrorT - dt); p.tempoT = Math.max(0, p.tempoT - dt); p.slowT = Math.max(0, p.slowT - dt); p.castLock = Math.max(0, p.castLock - dt);
   if (p.ward) { p.ward.t -= dt; if (p.ward.t <= 0 || p.ward.hp <= 0) G.breakWard(p); }
   for (const s of p.spells) if (s) s.cd = Math.max(0, s.cd - dt);
@@ -639,6 +639,15 @@ G.tryCast = function (p, i, quiet) {
     if (!last) { s.cd = Math.min(s.cd, H.QUICK_ATTACK.cd); s.maxCd = s.cd; }
     if (!(def.kind === 'melee' && def.charge)) { st.dmg = Math.round(st.dmg * H.QUICK_ATTACK.dmgMul); if (!def.quick) H.R.ring(p.x, p.z, 0xf2ead8, 0.3, 1.6, 0.25, 0.1, 0.8, 0.1); }
     G.float(p.x, 2.6, p.z, H.t('QUICK ATTACK') + ' ' + p.quickN + '/' + H.QUICK_ATTACK.max, p.quickN === H.QUICK_ATTACK.max ? 'big gold' : 'big');
+  }
+  // ground combo (sword): hits 1 and 2 come almost without cooldown, the 3rd is a slow sweep all around, then a pause
+  const cb = !quick && i === 0 && def.combo;
+  if (quick) p.comboN = 0;
+  if (cb) {
+    if (!(p.comboT > 0)) p.comboN = 0;
+    p.comboN = (p.comboN || 0) + 1;
+    if (p.comboN < 3) { s.cd = def.combo.gap; s.maxCd = s.cd; p.comboT = def.combo.window; }
+    else { s.cd = s.maxCd = def.combo.recover + def.combo.finisher.delay; p.comboN = 0; p.comboT = 0; G.comboFinisher(p, def, st); G.emit('cast', { p, slot: i, id: s.id }); return true; }
   }
   G.quick = quick;
   G.md = md; G.SPELL[def.kind](p, def, st); G.md = {}; G.quick = false;
@@ -1706,6 +1715,21 @@ G.buyItem = function (p, prop, i) {
 };
 /* ---------------- Equipment drops ---------------- */
 /* Stamina helpers (only heroes with useStam: the Veteran). Charged attacks out of a dash cost more. */
+/* Third hit of the sword combo: the hero winds up for a moment, then sweeps the blade all the way round at short range. */
+G.comboFinisher = function (p, def, st) {
+  const f = def.combo.finisher, dmg = Math.round(st.dmg * f.dmgMul);
+  p.casting = f.delay + 0.12; p.aimHoldT = Math.max(p.aimHoldT || 0, f.delay + 0.2);
+  H.R.ring(p.x, p.z, 0xf2ead8, 0.3, f.radius * 0.5, f.delay, 0.08, 0.5, 0.06); H.audio.play('sword_draw');
+  G.after(() => {
+    if (!G.active || p.dead) return;
+    p.anim.twirlN++;
+    const base = Math.atan2(p.aimDX, p.aimDZ);
+    H.R.slashArc(p.x, p.z, base, Math.PI, 0.3, f.radius, 0xf6ecd4, 0.4); H.R.slashArc(p.x, p.z, base, Math.PI, 0.3, f.radius * 0.7, 0xcfd8e6, 0.32, 0.14);
+    H.R.burst(p.x, 0.5, p.z, 0xe8ecf2, 22 * G.fxMul(p), 7, 0.35, 0.4, { flat: true }); H.R.shake(0.2); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.05);
+    let hit = 0; for (const e of G.enemiesNear(p.x, p.z, f.radius)) { const [kx, kz] = H.norm(e.x - p.x, e.z - p.z); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: f.knock, phys: true, cone: true })); hit++; }
+    if (hit) H.audio.play('sword_hit', { heavy: true });
+  }, f.delay * 1000);
+};
 G.quickReady = (p, def, i) => def.role === 'attack' && i === 0 && (p.dashT > 0 || (p.dashChainT || 0) > 0) && (p.quickN || 0) < H.QUICK_ATTACK.max;
 G.stamCost = (p, def) => { if (!p.useStam || !def.stam) return 0; const charged = def.charge && p.spells[0] && H.SPELLS[p.spells[0].id] === def && G.quickReady(p, def, 0); return Math.round(def.stam * (charged ? H.STAMINA.chargedMul : 1)); };
 G.spendStam = (p, n) => { p.stam = Math.max(0, p.stam - n); p.stamT = H.STAMINA.delay; };
