@@ -407,7 +407,7 @@ UI.showStore = function (opt = {}) {
     let h = '';
     if (tab === 'buy') {
       $('#st-sub', s).textContent = H.t('Purchases go straight to the bag of the hero who can use them: weapons to the Veteran, armour to the hero selected above ({n}).', { n: heroName(hero) }) + ' ' + H.t('Free space: {n}', { n: free(g) });
-      const ids = Object.keys(H.ITEMS).filter(id => filt === 'all' || H.ITEMS[id].slot === filt).sort((a, b) => H.EQUIP_SLOTS.findIndex(x => x.id === H.ITEMS[a].slot) - H.EQUIP_SLOTS.findIndex(x => x.id === H.ITEMS[b].slot) || ['common', 'uncommon', 'rare', 'legendary'].indexOf(H.ITEMS[a].rarity) - ['common', 'uncommon', 'rare', 'legendary'].indexOf(H.ITEMS[b].rarity));
+      const ids = Object.keys(H.ITEMS).filter(id => !H.G.itemDisabled(id) && (filt === 'all' || H.ITEMS[id].slot === filt)).sort((a, b) => H.EQUIP_SLOTS.findIndex(x => x.id === H.ITEMS[a].slot) - H.EQUIP_SLOTS.findIndex(x => x.id === H.ITEMS[b].slot) || ['common', 'uncommon', 'rare', 'legendary'].indexOf(H.ITEMS[a].rarity) - ['common', 'uncommon', 'rare', 'legendary'].indexOf(H.ITEMS[b].rarity));
       h = '<div class="grid2">' + ids.map(id => { const it = H.ITEMS[id]; const to = it.hero || hero; const price = UI.STORE_PRICE[it.rarity]; const ok = me.embers >= price; const note = it.hero ? ` · <span style="color:#e8c46a">${esc(H.t('for {n}', { n: heroName(to) }))}</span>` : ''; return card(id, `<button class="btn ${ok ? 'primary' : ''}" data-buy="${id}">${coin(price)}</button>`, note); }).join('') + '</div>';
     } else {
       const items = g.bag.map((id, i) => [id, i]).filter(([id]) => id && H.ITEMS[id] && (filt === 'all' || H.ITEMS[id].slot === filt));

@@ -294,9 +294,13 @@ H.SPELLS.fist_strike = { id: 'fist_strike', stam: 6, ups: { range: 0.25, dmg: 0.
   desc: s => `A quick punch: ${s.dmg} damage to foes right in front of you. Strike while dashing, or just after, for a charged blow: ${Math.round(s.dmg * 1.9)} damage all around you.` };
 /* Heroes: who can use what. 'primaries' are offered at the start of a run; 'kit' feeds level-up offers.
    weaponPrimary: when a main weapon is equipped, its item can name a 'primary' spell that replaces the default. */
+/* Weapons switched off for now: their items never drop, are not sold and can't be equipped (owned ones wait in
+   the bag). With the fists off, the Veteran always holds a weapon and starts with a plain steel sword. */
+H.DISABLED_WEAPONS = { axe: true, fists: true };
+H.DEFAULT_WEAPON = { knight: 'steel_sword' };
 H.HEROES = {
   percy: { primaries: H.PRIMARY, defaultPrimary: 'cinder_bolt', kit: null },
-  knight: { primaries: ['fist_strike'], defaultPrimary: 'fist_strike', kit: 'veteran' }
+  knight: H.DISABLED_WEAPONS.fists ? { primaries: ['sword_slash'], defaultPrimary: 'sword_slash', kit: 'veteran' } : { primaries: ['fist_strike'], defaultPrimary: 'fist_strike', kit: 'veteran' }
 };
 
 /* Stackable upgrades to the primary attack (slot I). kinds = primary spell kinds that can roll it. */

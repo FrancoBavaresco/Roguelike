@@ -39,10 +39,19 @@ G.heroGear = function (charId) {
   if (!g) g = me.gear[charId] = { equip: {}, bag: [] };
   for (const sl of H.EQUIP_SLOTS) if (!(sl.id in g.equip)) g.equip[sl.id] = null;
   for (let i = 0; i < H.BAG_SIZE; i++) if (g.bag[i] === undefined) g.bag[i] = null;
+  if (g.equip.weapon && G.itemDisabled(g.equip.weapon)) { const f = g.bag.findIndex(x => !x); if (f >= 0) { g.bag[f] = g.equip.weapon; g.equip.weapon = null; } }
+  if (H.DISABLED_WEAPONS && H.DISABLED_WEAPONS.fists && H.DEFAULT_WEAPON[charId] && (!g.equip.weapon || G.itemDisabled(g.equip.weapon))) { if (g.equip.weapon) { const f = g.bag.findIndex(x => !x); if (f >= 0) g.bag[f] = g.equip.weapon; } g.equip.weapon = H.DEFAULT_WEAPON[charId]; }
   return g;
 };
 /* Hero-locked items (weapons): Percy can't equip them. */
-G.canUse = (p, id) => { const it = H.ITEMS[id]; return !!it && (!it.hero || ((p && p.charId) || 'percy') === it.hero); };
+G.canUse = (p, id) => { const it = H.ITEMS[id]; return !!it && !G.itemDisabled(id) && (!it.hero || ((p && p.charId) || 'percy') === it.hero); };
+G.itemDisabled = id => { const it = H.ITEMS[id]; return !!(it && it.weapon && H.DISABLED_WEAPONS && H.DISABLED_WEAPONS[it.weapon]); };
+/* With the fists switched off, a hero that has a default weapon always holds one. Returns true if it changed. */
+G.ensureWeapon = function (p) {
+  const dw = H.DISABLED_WEAPONS && H.DISABLED_WEAPONS.fists && H.DEFAULT_WEAPON[p.charId]; if (!dw || !p.equip) return false;
+  const cur = p.equip.weapon; if (cur && G.canUse(p, cur)) return false;
+  p.equip.weapon = dw; return true;
+};
 G.weaponKit = p => { const id = p.equip && p.equip.weapon; const it = id && H.ITEMS[id]; return it && it.weapon && G.canUse(p, id) ? H.WEAPON_KITS[it.weapon] : null; };
 /* Equip/unequip a main weapon: slot I becomes its basic attack, slots II–IV take its attacks. */
 G.refreshWeapon = function (p) {
@@ -101,7 +110,8 @@ G.makePlayer = function (idx, seat) {
   H.views.create(p, { accent, cloak: idx === 0 ? 0x38323f : 0x1e3a40 });
   if (idx === 0 && H.CHARACTERS[p.charId]) p.name = H.CHARACTERS[p.charId].name;
   // each hero carries their own persistent equipment (one seat per hero in co-op)
-  if (G.run && G.run.mode !== 'tutorial' && G._gearTaken && !G._gearTaken.has(p.charId)) { G._gearTaken.add(p.charId); const me = G.heroGear(p.charId); p.persist = true; for (const k in p.equip) p.equip[k] = (me.equip[k] && H.ITEMS[me.equip[k]]) ? me.equip[k] : null; for (let i = 0; i < H.BAG_SIZE; i++) p.bag[i] = (me.bag[i] && H.ITEMS[me.bag[i]]) ? me.bag[i] : null; p.heldBack = {}; for (const k in p.equip) if (p.equip[k] && !G.canUse(p, p.equip[k])) { p.heldBack[k] = p.equip[k]; p.equip[k] = null; } G.recalcPlayer(p); p.hp = p.maxHp; p.mana = p.maxMana; }
+  if (G.run && G.run.mode !== 'tutorial' && G._gearTaken && !G._gearTaken.has(p.charId)) { G._gearTaken.add(p.charId); const me = G.heroGear(p.charId); p.persist = true; for (const k in p.equip) p.equip[k] = (me.equip[k] && H.ITEMS[me.equip[k]]) ? me.equip[k] : null; for (let i = 0; i < H.BAG_SIZE; i++) p.bag[i] = (me.bag[i] && H.ITEMS[me.bag[i]]) ? me.bag[i] : null; p.heldBack = {}; for (const k in p.equip) if (p.equip[k] && !G.canUse(p, p.equip[k])) { p.heldBack[k] = p.equip[k]; p.equip[k] = null; } G.ensureWeapon(p); G.recalcPlayer(p); p.hp = p.maxHp; p.mana = p.maxMana; }
+  else if (p.kind === 'player' && G.ensureWeapon(p)) { G.recalcPlayer(p); p.hp = p.maxHp; p.mana = p.maxMana; }
   return p;
 };
 G.gearStats = function (p) { const g = {}; for (const k in (p.equip || {})) { const it = p.equip[k] && H.ITEMS[p.equip[k]]; if (it) for (const s in it.stats) g[s] = (g[s] || 0) + it.stats[s]; } return g; };
@@ -1749,6 +1759,7 @@ G.equipItem = function (p, bagIdx) {
   const old = p.equip[it.slot]; p.equip[it.slot] = id; p.bag[bagIdx] = old || null; if (p.kind === 'player') G.recalcPlayer(p); else p.gear = G.gearStats(p); G.syncGear(p); H.audio.play('reward'); return true;
 };
 G.unequipItem = function (p, slot) {
+  if (slot === 'weapon' && H.DISABLED_WEAPONS && H.DISABLED_WEAPONS.fists && H.DEFAULT_WEAPON[p.charId]) { H.UI.toast(H.t('The Veteran always keeps a weapon in hand: equip another one from the bag to swap it.')); return false; }
   const id = p.equip[slot]; if (!id) return false; const free = p.bag.findIndex(x => !x); if (free < 0) return false;
   p.bag[free] = id; p.equip[slot] = null; if (p.kind === 'player') G.recalcPlayer(p); else p.gear = G.gearStats(p); G.syncGear(p); return true;
 };
