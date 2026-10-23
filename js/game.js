@@ -484,7 +484,9 @@ G.updatePlayer = function (p, dt) {
     p.vx = p.dashDX * p.dashSpeed; p.vz = p.dashDZ * p.dashSpeed;
     if (Math.random() < 0.9) H.R.emit(p.x, 0.8 + Math.random() * 0.8, p.z, -p.dashDX * 2, 0.5, -p.dashDZ * 2, 0.35, 0.5, 0.05, p.dashFx || p.color, 0.8, 0, 3);
     if (p.dashTrail) p.dashTrail(p, dt);
-    if (p.dashT <= 0) { p.vx = 0; p.vz = 0; p.dashTrail = null; p.dashFx = null; p.dashChainT = 0.35; }
+    // a dash never ends inside a column or over a pit: it carries on a little until the hero is clear
+    if (p.dashT <= 0 && G.overObstacle(p) && (p.dashExt || 0) < 0.3) { p.dashT = dt; p.dashExt = (p.dashExt || 0) + dt; }
+    else if (p.dashT <= 0) { p.vx = 0; p.vz = 0; p.dashTrail = null; p.dashFx = null; p.dashChainT = 0.35; p.dashExt = 0; p.dashImmune = false; }
   } else {
     p.bufDash = Math.max(0, (p.bufDash || 0) - dt);
     if (p.bufDash > 0 && p.dashCharges > 0 && p.castLock <= 0 && !(p.lungeT > 0)) { p.bufDash = 0; if (p.charge) { p.charge = null; p.anim.chargeK = 0; H.R.chargeArrow(p, false); } G.dash(p, it); }
@@ -550,6 +552,7 @@ G.dash = function (p, it) {
   if (Math.hypot(dx, dz) < 0.2) { dx = p.aimDX; dz = p.aimDZ; if (p.src === 'kbm' && !(Math.hypot(dx, dz) > 0)) { dx = 0; dz = -1; } }
   [dx, dz] = H.norm(dx, dz);
   p.dashCharges--; p.dashT = 0.17; p.dashDX = dx; p.dashDZ = dz; p.dashSpeed = 34; p.iframes = 0.24 + ((p.gear && p.gear.iframes) || 0);
+  p.dashImmune = true; p.dashExt = 0;   // immune to everything while the dash lasts, unless the hero attacks or casts during it
   p.tempoT = p.charms.has('tempo_loop') ? 1.5 : 0;
   H.audio.play('dash'); H.R.kickCam(dx, dz, 0.25);
   H.R.burst(p.x, 0.4, p.z, p.color, 12, 4, 0.4, 0.4, { flat: true });
@@ -566,11 +569,18 @@ G.voidTear = function (p, x1, z1, x2, z2) {
   const n = 5; for (let i = 0; i <= n; i++) { const x = x1 + (x2 - x1) * i / n, z = z1 + (z2 - z1) * i / n; H.R.burst(x, 0.6, z, 0xb36bff, 4, 2, 0.5, 0.4); for (const e of G.enemiesNear(x, z, 1.2)) if (!e._tearHit) { e._tearHit = true; G.damage(e, 10, { src: p, el: 'void', status: 'hex', stacks: 1, spell: 'rift_heel' }); } }
   for (const e of G.enemies) e._tearHit = false;
 };
+G.overObstacle = function (p) {
+  const room = G.room; if (!room) return false;
+  for (const q of room.pillars) if (H.dist2(p.x, p.z, q.x, q.z) < (q.r + p.r) ** 2) return true;
+  for (const q of room.pits) if (H.dist2(p.x, p.z, q.x, q.z) < (q.r + p.r * 0.6) ** 2) return true;
+  return false;
+};
 G.collide = function (ent) {
   const room = G.room; if (!room) return;
   const b = room.bounds; const r = ent.r;
   if (ent.x < b.minX + r) ent.x = b.minX + r; if (ent.x > b.maxX - r) ent.x = b.maxX - r;
   if (ent.z < b.minZ + r) ent.z = b.minZ + r; if (ent.z > b.maxZ - r) ent.z = b.maxZ - r;
+  if (ent.kind === 'player' && ent.dashT > 0) return;   // a dashing hero crosses columns and pits (the walls still stop it)
   for (const p of room.pillars) { const dx = ent.x - p.x, dz = ent.z - p.z, d = Math.hypot(dx, dz), m = p.r + r; if (d < m && d > 0.0001) { ent.x = p.x + dx / d * m; ent.z = p.z + dz / d * m; if (ent.onWall) ent.onWall(p); } }
   const knocked = ent.kind === 'enemy' && Math.hypot(ent.kvx, ent.kvz) > 5 && !ent.flying;
   for (const p of room.pits) {
@@ -589,7 +599,6 @@ G.tryCast = function (p, i, quiet) {
   const s = i === 4 ? p.ult : p.spells[i]; if (!s) return false; const def = H.SPELLS[s.id]; const st = H.spellStats(s.id, s.rank, p);
   const md = i === 0 ? (p.mods || {}) : {};
   if (md.heavy) st.dmg = Math.round(st.dmg * (1 + 0.25 * md.heavy));
-  if (p.dashT > 0 && def.kind !== 'ward' && def.kind !== 'bastion' && def.kind !== 'mirror' && def.kind !== 'melee' && !def.weapon) return false;
   if (p.spinT > 0) return false;
   if (p.throwing && def.weapon) return false; // the axe is still in the air
   if (def.charges ? s.charges <= 0 : s.cd > 0) { if (!quiet) G.emit('deny', { p, slot: i, why: 'cd' }); return false; }
@@ -607,7 +616,13 @@ G.tryCast = function (p, i, quiet) {
   const kitSfx = { cinder_bolt: 'fire_bolt', flamethrower: 'flamethrower', meteor: 'meteor_fall', pyre_supernova: 'nova_charge', firestorm: null, fist_strike: null }[def.id];
   if (def.weapon) { p.anim.castSide = 1; p.anim.swing = def.swing || def.kind; p.anim.swingN++; }
   if (kitSfx) H.audio.play(kitSfx, { pan: p.aimDX }); else if (kitSfx !== null && !def.weapon) H.audio.play('cast_' + def.el);
+  // casting or attacking mid-dash: allowed, but the hero is no longer immune for the rest of the dash
+  if (p.dashT > 0 && p.dashImmune) { p.dashImmune = false; p.iframes = 0; }
+  // attacking during a dash or right after it is a Quick Attack (weapons with their own dash strike handle it in melee())
+  const quick = def.role === 'attack' && i === 0 && (p.dashT > 0 || (p.dashChainT || 0) > 0) && !(def.kind === 'melee' && def.charge);
+  if (quick) { st.dmg = Math.round(st.dmg * H.QUICK_ATTACK.dmgMul); p.dashChainT = 0; G.float(p.x, 2.6, p.z, H.t('QUICK ATTACK'), 'big'); H.R.ring(p.x, p.z, 0xf2ead8, 0.3, 1.6, 0.25, 0.1, 0.8, 0.1); }
   G.md = md; G.SPELL[def.kind](p, def, st); G.md = {};
+  if (p.lungeT > 0 && p.dashT > 0) { p.dashT = 0; p.dashExt = 0; p.dashTrail = null; p.dashFx = null; }   // a lunge takes over the dash's movement
   G.emit('cast', { p, slot: i, id: s.id });
   if (G.tut) G.tutEvent('cast', { slot: i, id: s.id });
   return true;
@@ -667,7 +682,7 @@ G.SPELL = {
       H.R.shake(0.24); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.05);
       let hit = 0; for (const e of G.enemiesNear(p.x, p.z, R0)) { const [kx, kz] = H.norm(e.x - p.x, e.z - p.z); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: ch.knock, interrupt: true, phys: true, cone: true })); hit++; }
       if (hit) H.audio.play('sword_hit', { heavy: true });
-      G.float(p.x, 2.6, p.z, H.t('RUSHING SLASH'), 'big');
+      G.float(p.x, 2.6, p.z, H.t('QUICK ATTACK'), 'big');
       return;
     }
     if (charged) {
@@ -676,7 +691,7 @@ G.SPELL = {
       H.R.burst(p.x, 0.4, p.z, col, 36 * G.fxMul(p), 9, 0.45, 0.5, { flat: true, palette: [0xe8dcc4, 0xa89c84, 0x6e6a64] }); H.R.decal(p.x, p.z, 0x8a7a64, R0 * 0.7, 2.5);
       H.R.shake(0.28); H.audio.play('punch_heavy'); G.hitstop = Math.max(G.hitstop, 0.06);
       for (const e of G.enemiesNear(p.x, p.z, R0)) { const [kx, kz] = H.norm(e.x - p.x, e.z - p.z); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: ch.knock, interrupt: true, phys: true, blunt: def.dtype === 'blunt' })); }
-      G.float(p.x, 2.6, p.z, H.t('CHARGED BLOW'), 'big');
+      G.float(p.x, 2.6, p.z, H.t('QUICK ATTACK'), 'big');
       return;
     }
     const R0 = st.range, ang = def.angle * Math.PI / 360; let hit = 0;
@@ -1359,6 +1374,7 @@ G.kill = function (e, o = {}) {
 };
 G.hurtPlayer = function (p, dmg, srcName, o = {}) {
   if (p.dead || p.downed || G.god) return;
+  if (p.dashT > 0 && p.dashImmune) return;
   if (!o.dot && (p.invuln > 0 || p.iframes > 0)) return;
   if (!G.tut) dmg *= o.dot ? H.ENEMY_DOT_MUL : H.ENEMY_DMG_MUL;
   if (p.gear && p.gear.armor) dmg *= 1 - Math.min(0.5, p.gear.armor);
@@ -1440,7 +1456,7 @@ G.updateEnemy = function (e, dt) {
   e.x += e.vx * dt * slow; e.z += e.vz * dt * slow;
   // separation
   for (const o of G.enemies) { if (o === e || o.dead || o.spawnK < 1) continue; const dx = e.x - o.x, dz = e.z - o.z, d2 = dx * dx + dz * dz, m = e.r + o.r; if (d2 < m * m && d2 > 1e-6) { const d = Math.sqrt(d2), push = (m - d) * 0.5; const w = o.mass / (e.mass + o.mass); e.x += dx / d * push * w * 2; e.z += dz / d * push * w * 2; } }
-  for (const p of G.players) { if (p.dead) continue; const dx = e.x - p.x, dz = e.z - p.z, d2 = dx * dx + dz * dz, m = e.r + p.r * 0.8; if (d2 < m * m && d2 > 1e-6) { const d = Math.sqrt(d2); e.x += dx / d * (m - d) * 0.7; e.z += dz / d * (m - d) * 0.7; p.x -= dx / d * (m - d) * 0.3; p.z -= dz / d * (m - d) * 0.3; } }
+  for (const p of G.players) { if (p.dead || p.dashT > 0) continue; const dx = e.x - p.x, dz = e.z - p.z, d2 = dx * dx + dz * dz, m = e.r + p.r * 0.8; if (d2 < m * m && d2 > 1e-6) { const d = Math.sqrt(d2); e.x += dx / d * (m - d) * 0.7; e.z += dz / d * (m - d) * 0.7; p.x -= dx / d * (m - d) * 0.3; p.z -= dz / d * (m - d) * 0.3; } }
   G.collide(e);
 };
 
