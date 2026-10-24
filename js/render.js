@@ -1640,7 +1640,7 @@ R.readHeroAnim = function (m, p) {
   if (m._castN === undefined) { m._castN = A.castN; m._swingN = A.swingN; m._twirlN = A.twirlN; m._el = A.el; } // a fresh model starts in sync, without replaying old events
   if (A.castN !== m._castN) { m._castN = A.castN; m.castT = 1; }
   m.castSide = A.castSide;
-  if (A.swingN !== m._swingN) { m._swingN = A.swingN; m.swing = A.swing; m.swingT = 1; m.swingBig = A.bigN === A.swingN; m.swingArc = A.arcN === A.swingN ? A.arc : null; } // swingBig: a combo finisher (bigger energy arc)
+  if (A.swingN !== m._swingN) { m._swingN = A.swingN; m.swing = A.swing; m.swingT = 1; m.swingBig = A.bigN === A.swingN; m.swingArc = A.arcN === A.swingN ? A.arc : null; m.swingRate = A.arcN === A.swingN ? A.rate : 0; } // swingBig: a combo finisher (bigger energy arc)
   if (A.twirlN !== m._twirlN) { m._twirlN = A.twirlN; m.twirlT = 0.26; m.swingT = 0; }
   m.chargeK = A.chargeK;
   if (A.el !== m._el) { m._el = A.el; if (A.el) R.setRogueElement(m, A.el); }
@@ -1690,7 +1690,7 @@ R.animateRogue = function (m, p, dt) {
   const ph = m.walk, stride = Math.sin(ph) * mk;
   // attack / action pose (all additive, smoothed so nothing pops)
   const ct0 = m.castT || 0;
-  m.swingT = Math.max(0, (m.swingT || 0) - dt * ({ cleave: 2.6, smash: 2.2, throw: 3.2, backhand: 2.4, chop: 4.0 }[m.swing] || 3.6));
+  m.swingT = Math.max(0, (m.swingT || 0) - dt * (m.swingRate || { cleave: 2.6, smash: 2.2, throw: 3.2, backhand: 2.4, chop: 4.0 }[m.swing] || 3.6));
   const sw = m.swingT > 0 ? m.swing : null, st = 1 - m.swingT, se = st * st * (3 - 2 * st), arc = Math.sin(Math.PI * st);
   const T = { yaw: 0, pitch: 0, dip: 0, roll: 0, l0: 0, l1: 0 };
   if (p.spinT > 0) { T.pitch = -0.08; T.dip = -0.06; T.l0 = 0.25; T.l1 = -0.25; }
