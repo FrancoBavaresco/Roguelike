@@ -1524,7 +1524,8 @@ R.weaponGLB = {};
 R.loadWeaponModels = function () {
   const THREE = T3(); if (!THREE.GLTFLoader) return;
   for (const [key, cfg] of Object.entries(R.WEAPON_MODELS)) {
-    new THREE.GLTFLoader().load(cfg.url, gltf => {
+    const loader = new THREE.GLTFLoader();
+    const onLoad = gltf => {
       const fit = new THREE.Group(); fit.add(gltf.scene); fit.rotation.x = cfg.rotX || 0; const sc = cfg.scale || 1, th = cfg.thick || [1, 1]; fit.scale.set(sc * th[0], sc * th[1], sc); // file axes: X width, Y thickness, Z length fit.position.y = cfg.lift || 0;
       fit.traverse(o => { if (!o.isMesh) return; o.castShadow = true; o.geometry.shared = true; const mt = o.material; mt.shared = true;
         if (mt.isMeshStandardMaterial) R.metalize(mt, 0.9);
@@ -1532,7 +1533,15 @@ R.loadWeaponModels = function () {
       R.weaponGLB[key] = { fit, cfg };
       // heroes already dressed swap their procedural blade for the model
       for (const p of (H.G && H.G.players) || []) if (p.model && p.equip && p.equip.weapon && H.ITEMS[p.equip.weapon] && H.ITEMS[p.equip.weapon].model === key) { p.model._dressKey = null; R.dressRogue(p.model, p.equip); }
-    }, undefined, () => console.warn('[weapons] ' + cfg.url + ' not loaded; keeping the procedural blade'));
+    };
+    const give_up = () => console.warn('[weapons] ' + cfg.url + ' not loaded; keeping the procedural blade');
+    // hosts that don't serve .glb files get the same model embedded in '<url>.js' (base64 in H.EMBED[url])
+    const fromB64 = b64 => { const bin = atob(b64), buf = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i); loader.parse(buf.buffer, '', onLoad, give_up); };
+    if (H.EMBED && H.EMBED[cfg.url]) { fromB64(H.EMBED[cfg.url]); continue; }   // already embedded by the page: no request
+    const embedded = () => { const sc = document.createElement('script'); sc.src = cfg.url + '.js';
+      sc.onload = () => { const b64 = H.EMBED && H.EMBED[cfg.url]; if (!b64) return give_up(); fromB64(b64); };
+      sc.onerror = give_up; document.head.appendChild(sc); };
+    loader.load(cfg.url, onLoad, undefined, embedded);
   }
 };
 R.makeSword = function (m, wpn) {
