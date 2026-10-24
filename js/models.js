@@ -33,8 +33,10 @@
     knight: { url: 'public/models/characters/theron.glb', enabled: true, fallback: 'procedural', height: 1.9, rotY: Math.PI, yOffset: 0, tint: null, pool: 1,
       sockets: { hand_R: 'hand_R', hand_L: 'hand_L', head: 'Head', spine: 'Spine' },
       armIK: { R: ['RightUpperArm', 'RightLowerArm', 'RightHand'], L: ['LeftUpperArm', 'LeftLowerArm', 'LeftHand'] },
+      // extra clips made for this rig (JSON, THREE.AnimationClip format); runSpeed: ground speed (m/s) the run clip was made for
+      extraClips: ['public/models/characters/theron_run.json'], runSpeed: 4.07,
       subclips: { combo1: ['Attack_Combo', 0.3, 0.68], combo2: ['Attack_Combo', 0.62, 0.98], combo3: ['Attack_Combo', 0.92, 1.4], slam: ['Special_Slam', 0.12, 1.25] },
-      anims: { idle: 'Combat_Idle', calm: 'Idle', run: 'Run', dash: 'Dash', hurt: 'Hit', cast: 'Ultimate', slash: 'combo1', chop: 'combo2', thrust: 'combo3', smash: 'slam' } }
+      anims: { idle: 'Combat_Idle', calm: 'Idle', run: 'Run_Std', dash: 'Dash', hurt: 'Hit', cast: 'Ultimate', slash: 'combo1', chop: 'combo2', thrust: 'combo3', smash: 'slam' } }
   };
   H.BOSS_MODELS = {};
   const groups = () => [H.ENEMY_MODELS, H.PLAYER_MODELS, H.BOSS_MODELS];
@@ -56,6 +58,7 @@
       M.status[type] = 'loading';
       const fail = why => { M.status[type] = 'missing'; M.report[type] = { error: why }; console.warn('[models] ' + cfg.url + ' not used (' + why + '); keeping the procedural model.'); res(); };
       try {
+        const extra = []; // clips loaded from JSON before the model is finished
         const onGltf = gltf => {
           try {
             const scene = gltf.scene; if (!scene) return fail('no scene');
@@ -69,7 +72,7 @@
             if (!(h > 1e-4) || !isFinite(h)) return fail('empty bounding box');
             const scale = cfg.height ? cfg.height / h : (cfg.scale || 1);
             const fit = { scale, lift: -box.min.y * scale + (cfg.yOffset || 0), height: h * scale };
-            const clips = (gltf.animations || []).slice();
+            const clips = (gltf.animations || []).slice().concat(extra);
             // sub-clips cut from longer clips (e.g. one hit of a combo)
             for (const [name, [from, a, b]] of Object.entries(cfg.subclips || {})) { const src = THREE.AnimationClip.findByName(clips, from); if (src && THREE.AnimationUtils.subclip) clips.push(THREE.AnimationUtils.subclip(src, name, Math.round(a * 60), Math.round(b * 60), 60)); }
             const missing = Object.entries(cfg.anims || {}).filter(([, n]) => !THREE.AnimationClip.findByName(clips, n)).map(([k]) => k);
@@ -81,9 +84,13 @@
           } catch (err) { fail(err && err.message || 'bad file'); }
         };
         // hosts that don't serve .glb files: the page can embed the model as base64 in H.EMBED[url]
+        const go = () => {
         const emb = H.EMBED && H.EMBED[cfg.url];
         if (emb) { const bin = atob(emb), buf = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i); loader.parse(buf.buffer, '', onGltf, err => fail(err && err.message || 'bad embedded file')); }
         else loader.load(cfg.url, onGltf, undefined, err => fail(err && err.message || 'not found'));
+        };
+        // extra clips (a missing one is skipped; the model still loads)
+        Promise.all((cfg.extraClips || []).map(u => fetch(u).then(r => r.ok ? r.json() : null).then(j => { if (j) extra.push(THREE.AnimationClip.parse(j)); }).catch(() => console.warn('[models] ' + u + ' not loaded')))).then(go);
       } catch (err) { fail(err && err.message || 'loader error'); }
     }));
     return Promise.all(jobs).then(() => M.warm());

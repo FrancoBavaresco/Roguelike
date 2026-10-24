@@ -1856,10 +1856,18 @@ R.animateHeroGLB = function (m, p, dt, moving, speed) {
   else if (dashing) { clip = 'dash'; rate = dur('dash') / 0.36; }
   else if (sw) { clip = sw; if (swingKey !== m._glbSwing) { restart = true; m._glbSwing = swingKey; } rate = dur(sw) * (m.twirlT > 0 ? 1 / 0.26 : R.swingRate(m)); }
   else if (p.callT > 0) { clip = 'cast'; if (!m._glbCall) restart = true; rate = dur('cast') / 3; }
-  else if (moving) { clip = 'run'; rate = H.clamp(speed / ((H.MOVE && H.MOVE.speed) || 7.2), 0.6, 1.5); }
+  else if (moving) { clip = 'run'; const cfg = H.models.cfg('knight') || {}; rate = H.clamp(speed / (cfg.runSpeed || (H.MOVE && H.MOVE.speed) || 7.2), 0.6, 1.75); }
   else clip = H.G && H.G.enemies && H.G.enemies.some(e => !e.dead && e.spawnK >= 1) ? 'idle' : 'calm';
   m._glbCall = p.callT > 0;
   P(A, clip, 0.12, restart, rate); A.mixer.update(dt);
+  // running with nothing else going on: the sword stays in front, point forward, bobbing with the stride
+  if (clip === 'run' && m.sword && !(m.chargeK > 0) && !p.charge && !(p.spinT > 0)) {
+    const act = A.actions.run, ph = act ? (act.time / act.getClip().duration) * Math.PI * 4 : 0, k = H.clamp(speed / 3, 0, 1);
+    const hx = m.twoHand ? 0.16 : 0.27, hy = 1.0 + Math.sin(ph) * 0.03, hz = -0.42 - Math.cos(ph) * 0.03;
+    m.hR.position.x += (hx - m.hR.position.x) * k; m.hR.position.y += (hy - m.hR.position.y) * k; m.hR.position.z += (hz - m.hR.position.z) * k;
+    const inner = m.sword.userData.inner; inner.rotation.x += (-1.42 - inner.rotation.x) * k; m.sword.rotation.y += (0.22 - m.sword.rotation.y) * k; m.sword.rotation.x += (-0.08 - m.sword.rotation.x) * k;
+    if (m.twoHand) m.hL.position.set(m.hR.position.x - 0.13, m.hR.position.y - 0.07, m.hR.position.z + 0.05);
+  }
   // arms: reach for the procedural hands (the sword hand always; the other one on two-handed weapons)
   m.root.updateMatrixWorld(true);
   if (m.sword) R.heroArmIK(m, 'R');
