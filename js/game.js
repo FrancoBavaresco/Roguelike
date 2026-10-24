@@ -654,6 +654,8 @@ G.tryCast = function (p, i, quiet) {
     if (p.comboN < 3) { s.cd = def.combo.gap; s.maxCd = s.cd; p.comboT = def.combo.window; }
     else { s.cd = s.maxCd = def.combo.recover + def.combo.finisher.delay; p.comboN = 0; p.comboT = 0; G.comboFinisher(p, def, st); G.emit('cast', { p, slot: i, id: s.id }); return true; }
   }
+  // the 3rd attack of the dash combo is a horizontal slash that shoves and stuns weak foes
+  if (quick && def.quickFinisher && p.quickN >= H.QUICK_ATTACK.max) { s.cd = s.maxCd = (def.combo ? def.combo.recover : 0.5) + def.quickFinisher.delay; G.comboFinisher(p, def, st, def.quickFinisher); G.emit('cast', { p, slot: i, id: s.id }); return true; }
   G.quick = quick;
   G.md = md; G.SPELL[def.kind](p, def, st); G.md = {}; G.quick = false;
   if (p.lungeT > 0 && p.dashT > 0) { p.dashT = 0; p.dashExt = 0; p.dashTrail = null; p.dashFx = null; }   // a lunge takes over the dash's movement
@@ -1825,8 +1827,8 @@ G.divineCall = function (p, greater) {
   G.emit('cast', { p, slot: 4, id: def.id });
 };
 /* Third hit of the sword combo: a short wind-up, then a heavy cut straight ahead in a 45° wedge (nothing at the sides or behind). */
-G.comboFinisher = function (p, def, st) {
-  const f = def.combo.finisher, dmg = Math.round(st.dmg * f.dmgMul);
+G.comboFinisher = function (p, def, st, fin) {
+  const f = fin || def.combo.finisher, dmg = Math.round(st.dmg * f.dmgMul);
   p.casting = f.delay + 0.12; p.aimHoldT = Math.max(p.aimHoldT || 0, f.delay + 0.25);
   H.audio.play('sword_draw');
   G.after(() => {
@@ -1840,7 +1842,8 @@ G.comboFinisher = function (p, def, st) {
     for (const e of G.enemies) {
       if (e.dead || e.spawnK < 1) continue; const dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz);
       if (d > R0 + e.r || Math.abs(H.angDiff(Math.atan2(dx, dz), base)) > ang + Math.atan2(e.r, Math.max(d, 0.1))) continue;
-      const [kx, kz] = H.norm(dx, dz); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: f.knock, phys: true, cone: true })); hit++;
+      const weak = !e.elite && !e.boss && (e.mass || 1) <= 1.5;
+      const [kx, kz] = H.norm(dx, dz); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: f.knock, phys: true, cone: true, stun: f.stunWeak && weak ? f.stunWeak : 0, interrupt: !!(f.stunWeak && weak) })); hit++;
     }
     if (hit) { H.audio.play('sword_hit', { heavy: true }); H.R.kickCam(p.aimDX, p.aimDZ, 0.12); }
   }, f.delay * 1000);
