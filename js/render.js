@@ -62,6 +62,8 @@ R.init = function (canvas) {
   window.addEventListener('resize', R.resize);
   R.ready = true;
   R.loadWeaponModels();
+  // marble and rock are shared by every room: prepare them while the menu is up, so no room stalls building them
+  setTimeout(() => { try { if (H.settings.look !== 'classic') { R.rockTextures(); R.marbleTextures('beige'); setTimeout(() => R.marbleTextures('grey'), 300); } } catch (e) { /* built on demand instead */ } }, 1200);
 };
 R.applyQuality = function () {
   const q = H.settings.quality;
@@ -563,8 +565,88 @@ R.monolithTexture = function () {
   });
   t.wrapS = t.wrapT = T3().RepeatWrapping; return (R._monoTex = t);
 };
+/* ---- Room materials: rock walls (Poly Haven "Dark Rock 02", CC0), marble floors (procedural), style per room ---- */
+R.MAT = {
+  rock: { dir: 'public/textures/dark_rock_02/', size: 2.5, normal: 1.0 },          // one repeat of the rock every 2.5 m
+  marble: { tile: 1, texM: 4, px: 1024, roughness: 0.62, normal: 0.6 },              // 1 m tiles; one texture = 4×4 tiles
+  marbleTint: { beige: 0x4a4438, grey: 0x3c4244 },                                  // multiplied into the texture: dungeon-dim marble
+  rockLight: 1.9                                                                       // the scan is very dark: lift it so the strata read
+};
+// loaded once, shared by every room
+R.rockTextures = function () {
+  if (R._rock) return R._rock;
+  const THREE = T3(), L = new THREE.TextureLoader(), d = R.MAT.rock.dir, an = Math.min(8, R.renderer.capabilities.getMaxAnisotropy());
+  const ld = (f, srgb) => { const t = L.load(d + f); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = an; if (srgb) t.encoding = THREE.sRGBEncoding; return t; };
+  return (R._rock = { map: ld('diff_1k.jpg', true), normal: ld('nor_gl_1k.jpg'), rough: ld('rough_1k.jpg') });
+};
+// a box whose UVs come from world coordinates (u, v in metres / size), so neighbouring blocks continue the same rock
+R.worldBoxUV = function (w, h, d, cx, cy, cz, size) {
+  const g = new (T3().BoxGeometry)(w, h, d), P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, k = 1 / size;
+  for (let i = 0; i < P.count; i++) { const x = P.getX(i) + cx, y = P.getY(i) + cy, z = P.getZ(i) + cz, ax = Math.abs(N.getX(i)), ay = Math.abs(N.getY(i));
+    if (ax > 0.5) U.setXY(i, z * k, y * k); else if (ay > 0.5) U.setXY(i, x * k, z * k); else U.setXY(i, x * k, y * k); }
+  U.needsUpdate = true; return g;
+};
+// marble tiles: veins (turbulent bands, each tile cut at its own angle), tone per tile, grout joints; colour + normal + roughness
+R.marbleTextures = function (variant) {
+  R._marble = R._marble || {}; if (R._marble[variant]) return R._marble[variant];
+  const THREE = T3(), M = R.MAT.marble, S = M.px, T = M.texM / M.tile, TS = S / T, rnd = R.mulberry(variant === 'grey' ? 0x6a7b1e : 0xbe19e0);
+  // tileable value noise
+  const G = 64, lat = new Float32Array(G * G).map(() => rnd()); const sm = t => t * t * (3 - 2 * t);
+  const vn = (x, y, f) => { const X = x * f, Y = y * f, xi = Math.floor(X), yi = Math.floor(Y), tx = sm(X - xi), ty = sm(Y - yi), P = f; const at = (a, b) => lat[((((b % P) + P) % P) % G) * G + ((((a % P) + P) % P) % G)];
+    return (at(xi, yi) * (1 - tx) + at(xi + 1, yi) * tx) * (1 - ty) + (at(xi, yi + 1) * (1 - tx) + at(xi + 1, yi + 1) * tx) * ty; };
+  const fbm = (x, y) => vn(x, y, 4) * 0.5 + vn(x, y, 8) * 0.25 + vn(x, y, 16) * 0.15 + vn(x, y, 32) * 0.1;
+  const base = variant === 'grey' ? [214, 216, 214] : [232, 220, 196], vein = variant === 'grey' ? [88, 92, 98] : [146, 122, 92], vein2 = variant === 'grey' ? [150, 154, 158] : [196, 176, 140];
+  const tiles = []; for (let j = 0; j < T; j++) for (let i = 0; i < T; i++) tiles.push({ a: rnd() * Math.PI, f: 0.55 + rnd() * 0.8, o: rnd() * 10, tone: 0.9 + rnd() * 0.14 });
+  const mk = () => { const c = document.createElement('canvas'); c.width = c.height = S; return c; };
+  const cc = mk(), rc = mk(), hc = mk(); const cd = cc.getContext('2d').createImageData(S, S), rd = rc.getContext('2d').createImageData(S, S), hd = new Float32Array(S * S);
+  const J = Math.max(2, Math.round(S / 256)), bev = J * 2;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const ti = Math.floor(x / TS), tj = Math.floor(y / TS), t = tiles[tj * T + ti], lx = x - ti * TS, ly = y - tj * TS, u = x / S, v = y / S;
+    const edge = Math.min(lx, ly, TS - 1 - lx, TS - 1 - ly);
+    const n = fbm(u, v), d = (Math.cos(t.a) * lx + Math.sin(t.a) * ly) / TS;
+    const band = Math.abs(Math.sin((d * t.f + t.o + n * 2.6) * Math.PI)), veinK = Math.pow(1 - band, 9) * 0.8 + Math.pow(1 - band, 2.5) * 0.1, fine = Math.pow(1 - Math.abs(Math.sin((u * 5 + v * 3 + n * 9) * Math.PI)), 60) * 0.3;
+    const cloud = 0.92 + (fbm(u + 3.1, v + 1.7) - 0.5) * 0.16;
+    let r = 0, g = 0, b = 0; for (let k = 0; k < 3; k++) { let val = base[k] * cloud * t.tone; val = val * (1 - veinK) + vein[k] * veinK; val = val * (1 - fine) + vein2[k] * fine; if (k === 0) r = val; else if (k === 1) g = val; else b = val; }
+    let h = 1, rough = M.roughness + veinK * 0.12;
+    if (edge < J) { r = r * 0.28; g = g * 0.28; b = b * 0.28; h = 0.15; rough = 0.95; }          // grout
+    else if (edge < J + bev) { const k = (edge - J) / bev; h = 0.7 + 0.3 * k; r *= 0.86 + 0.14 * k; g *= 0.86 + 0.14 * k; b *= 0.86 + 0.14 * k; }   // worn bevel
+    const i4 = (y * S + x) * 4; cd.data[i4] = r; cd.data[i4 + 1] = g; cd.data[i4 + 2] = b; cd.data[i4 + 3] = 255; const rv = Math.min(255, rough * 255); rd.data[i4] = rv; rd.data[i4 + 1] = rv; rd.data[i4 + 2] = rv; rd.data[i4 + 3] = 255; hd[y * S + x] = h;
+  }
+  cc.getContext('2d').putImageData(cd, 0, 0); rc.getContext('2d').putImageData(rd, 0, 0);
+  const nd = hc.getContext('2d').createImageData(S, S), H0 = (x, y) => hd[((y + S) % S) * S + ((x + S) % S)];
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const dx = H0(x + 1, y) - H0(x - 1, y), dy = H0(x, y + 1) - H0(x, y - 1); let vx = -dx * 2, vy = dy * 2, vz = 1; const L = Math.hypot(vx, vy, vz); const i4 = (y * S + x) * 4; nd.data[i4] = (vx / L * 0.5 + 0.5) * 255; nd.data[i4 + 1] = (vy / L * 0.5 + 0.5) * 255; nd.data[i4 + 2] = (vz / L * 0.5 + 0.5) * 255; nd.data[i4 + 3] = 255; }
+  hc.getContext('2d').putImageData(nd, 0, 0);
+  const an = Math.min(8, R.renderer.capabilities.getMaxAnisotropy()), tex = (c, srgb) => { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / M.texM, 1 / M.texM); t.anisotropy = an; if (srgb) t.encoding = THREE.sRGBEncoding; return t; };
+  return (R._marble[variant] = { map: tex(cc, true), normal: tex(hc), rough: tex(rc) });
+};
+R.marbleMaterial = function (variant) {
+  R._marbleMat = R._marbleMat || {}; if (R._marbleMat[variant]) return R._marbleMat[variant];
+  const THREE = T3(), t = R.marbleTextures(variant), M = R.MAT.marble;
+  const m = new THREE.MeshStandardMaterial({ color: R.MAT.marbleTint[variant], map: t.map, normalMap: t.normal, normalScale: new THREE.Vector2(M.normal, M.normal), roughnessMap: t.rough, roughness: 1, metalness: 0 });
+  m.shared = true; return (R._marbleMat[variant] = m);
+};
+/* Floor style per room, from the room's own seed (the same room always looks the same):
+   stone = the worn flagstones · marble = beige or grey marble tiles · mixed = stone with a marble nave (temples, bosses) */
+R.roomStyle = function (room) {
+  if (room._style) return room._style;
+  if (H.settings.look === 'classic') return (room._style = { floor: 'stone' });
+  const rnd = R.decorRng(room); rnd(); const v = rnd() < 0.5 ? 'beige' : 'grey', k = rnd();
+  const t = room.type;
+  let floor = 'stone';
+  if (H.G && H.G.run && H.G.run.forceStyle) floor = H.G.run.forceStyle;
+  else if (t === 'warden' || t === 'arena') floor = 'mixed';
+  else if (['shrine', 'treasure', 'rest', 'merchant', 'mystery'].includes(t)) floor = k < 0.6 ? 'marble' : 'mixed';
+  else if (t === 'challenge') floor = k < 0.5 ? 'mixed' : 'marble';
+  else floor = k < 0.6 ? 'stone' : k < 0.8 ? 'marble' : 'mixed';
+  return (room._style = { floor, marble: v });
+};
 R.wallMaterial = function (tint) {
-  if (H.settings.look !== 'classic') return new (T3().MeshStandardMaterial)({ color: tint, map: R.monolithTexture(), roughness: 0.95, metalness: 0 });
+  if (H.settings.look !== 'classic') {
+    // rock walls: colour, OpenGL normal and roughness from the CC0 scan; the depth's tint stays light so the rock reads
+    const T = R.rockTextures(), THREE = T3();
+    const c = new THREE.Color(0xffffff).lerp(tint || new THREE.Color(0xffffff), 0.3).multiplyScalar(R.MAT.rockLight);
+    return new THREE.MeshStandardMaterial({ color: c, map: T.map, normalMap: T.normal, normalScale: new THREE.Vector2(R.MAT.rock.normal, R.MAT.rock.normal), roughnessMap: T.rough, roughness: 1, metalness: 0 });
+  }
   if (!R.wallTex) {
     const N = 512; const cv = document.createElement('canvas'); cv.width = cv.height = N; const c = cv.getContext('2d');
     c.fillStyle = '#1c1b1f'; c.fillRect(0, 0, N, N);
@@ -612,13 +694,24 @@ R.buildChamber = function (room, theme) {
   const W = b.maxX - b.minX, D = b.maxZ - b.minZ;
   // floor: one continuous paver surface (gray brick, running bond) with real holes for pits
   const tint = H.settings.look === 'classic' ? new THREE.Color(0xffffff).lerp(new THREE.Color(theme.light), 0.12).multiplyScalar(0.7) : new THREE.Color(0xffffff).lerp(new THREE.Color(theme.rune), 0.14).multiplyScalar(0.6);
-  const floorMat = R.floorMaterial(tint);
+  const style = R.roomStyle(room);
+  const floorMat = style.floor === 'marble' ? R.marbleMaterial(style.marble) : R.floorMaterial(tint);
   const grid = R.roomGrid(room); room._grid = grid;
   const shape = new THREE.Shape(); const loop = R.cellOutline(grid, (i, j) => grid.inside(i, j) || grid.ring(i, j));
   loop.forEach(([x, z], k) => k ? shape.lineTo(x, -z) : shape.moveTo(x, -z));
   for (const p of room.pits) { const hole = new THREE.Path(); hole.absarc(p.x, -p.z, p.r + 0.05, 0, Math.PI * 2, true); shape.holes.push(hole); }
   const fgeo = new THREE.ShapeGeometry(shape, 24); fgeo.rotateX(-Math.PI / 2);
   const floor = new THREE.Mesh(fgeo, floorMat); floor.receiveShadow = true; floor.position.y = 0; R.chamber.add(floor);
+  // mixed: a marble nave down the middle of the hall (whole tiles, holes for pits), stone all around
+  if (style.floor === 'mixed') {
+    const mh = room.main || b, tl = R.MAT.marble.tile, m = 4, x0 = Math.ceil((mh.minX + m) / tl) * tl, x1 = Math.floor((mh.maxX - m) / tl) * tl, z0 = Math.ceil((mh.minZ + m) / tl) * tl, z1 = Math.floor((mh.maxZ - 2) / tl) * tl;
+    const nave = Math.min(x1 - x0, Math.max(8, Math.round((x1 - x0) * 0.45 / tl) * tl)), nx0 = Math.round(((x0 + x1) / 2 - nave / 2) / tl) * tl;
+    const sh = new THREE.Shape(); sh.moveTo(nx0, -z1); sh.lineTo(nx0 + nave, -z1); sh.lineTo(nx0 + nave, -z0); sh.lineTo(nx0, -z0); sh.lineTo(nx0, -z1);
+    for (const p of room.pits) if (p.x + p.r > nx0 && p.x - p.r < nx0 + nave && p.z + p.r > z0 && p.z - p.r < z1) { const hole = new THREE.Path(); hole.absarc(p.x, -p.z, p.r + 0.05, 0, Math.PI * 2, true); sh.holes.push(hole); }
+    const ng = new THREE.ShapeGeometry(sh, 24); ng.rotateX(-Math.PI / 2);
+    const nv = new THREE.Mesh(ng, R.marbleMaterial(style.marble)); nv.receiveShadow = true; nv.position.y = 0.006; R.chamber.add(nv);
+    room._nave = { x0: nx0, x1: nx0 + nave, z0, z1 };
+  }
   // soft dark vignette toward the walls so the room edge reads without a hard grid
   const vg = new THREE.Mesh(new THREE.PlaneGeometry(W + 4.4, D + 4.4), new THREE.MeshBasicMaterial({ map: R.texVignette || (R.texVignette = R.canvasTex(256, 256, c => { const g = c.createRadialGradient(128, 128, 60, 128, 128, 182); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.75)'); c.fillStyle = g; c.fillRect(0, 0, 256, 256); })), transparent: true, depthWrite: false }));
   vg.rotation.x = -Math.PI / 2; vg.position.set((b.minX + b.maxX) / 2, 0.012, (b.minZ + b.maxZ) / 2); R.chamber.add(vg);
@@ -641,7 +734,7 @@ R.buildChamber = function (room, theme) {
   const wallTops = [];
   const addBlock = (x, z, w, h, d, low, east, side) => {
     if (!low && side) wallTops.push({ x, z, w, d, top: h - 0.3, side });
-    const m = new THREE.Mesh(R.boxUV(w, h, d, 0.5), wallMat); m.position.set(x, h / 2 - 0.3, z); m.castShadow = !low; m.receiveShadow = true; R.chamber.add(m);
+    const m = new THREE.Mesh(H.settings.look !== 'classic' ? R.worldBoxUV(w, h, d, x, h / 2 - 0.3, z, R.MAT.rock.size) : R.boxUV(w, h, d, 0.5), wallMat); m.position.set(x, h / 2 - 0.3, z); m.castShadow = !low; m.receiveShadow = true; R.chamber.add(m);
     if (east) { m.userData.eastWall = true; m.userData.h = h; }
     if (!low && R.drand() < 0.35) { const s = new THREE.Mesh(new THREE.BoxGeometry(w * 0.6, 0.08, d * 1.02), runeMat); s.position.set(x, h * (0.3 + R.drand() * 0.5), z); R.chamber.add(s); if (east) { s.userData.eastWall = true; s.userData.rune = true; } }
   };
