@@ -24,12 +24,12 @@
     quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     U = {
       tLit: { value: rtLit.texture }, tAlb: { value: rtAlb.texture }, tNrm: { value: rtNrm.texture }, tFx: { value: rtFx.texture }, tDepth: { value: rtLit.depthTexture }, tShade: { value: rtShade.texture },
-      uPx: { value: new THREE.Vector2(1, 1) }, uNear: { value: 0.5 }, uFar: { value: 200 }, uHalf: { value: new THREE.Vector2(10, 10) }, uOrtho: { value: 1 }, uMode: { value: 0 },
+      uPx: { value: new THREE.Vector2(1, 1) }, uNear: { value: 0.5 }, uFar: { value: 200 }, uHalf: { value: new THREE.Vector2(10, 10) }, uOrtho: { value: 1 }, uMode: { value: 0 }, uSheen: { value: 0.6 },
       uShadowTint: { value: new THREE.Color(0x3c4a58) }, uTermTint: { value: new THREE.Color(0x24503e) }, uInk: { value: new THREE.Color(0x070b0a) }, uExposure: { value: 0.72 }, uSky: { value: new THREE.Color(0x0a1210) }
     };
     const vert = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
     const frag = `
-      uniform sampler2D tLit, tAlb, tNrm, tFx, tDepth, tShade; uniform vec2 uPx, uHalf; uniform float uNear, uFar, uExposure, uOrtho; uniform int uMode;
+      uniform sampler2D tLit, tAlb, tNrm, tFx, tDepth, tShade; uniform vec2 uPx, uHalf; uniform float uNear, uFar, uExposure, uOrtho; uniform int uMode; uniform float uSheen;
       uniform vec3 uShadowTint, uTermTint, uInk, uSky; varying vec2 vUv;
       float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
       float viewZ(vec2 uv) { float d = texture2D(tDepth, uv).x;
@@ -65,6 +65,9 @@
         col *= mix(vec3(1.0), uShadowTint * 1.6, shadowM);
         col *= mix(1.0, 0.82, midM * (1.0 - shadowM));
         col = mix(col, overlay(clamp(col, 0.0, 1.0), clamp(0.5 + lightHue * 0.45, 0.0, 1.0)), hiM * 0.85);
+        // reflections: where a surface receives more light than its own colour (specular sheen on polished stone,
+        // metal, a brazier right next to the floor) the excess shows on top of the painted bands
+        vec3 sheen = max(lit - alb * 1.1, vec3(0.0)); col += sheen * uSheen;
         col *= mix(0.55, 1.0, ao);
         col *= 1.0 - concave * 0.35; col += convex * 0.14 * (0.4 + 0.6 * (1.0 - shadowM)) * vec3(0.82, 0.88, 0.85);
         // terminator: only where the light really turns

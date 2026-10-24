@@ -429,6 +429,88 @@ R.makeSlabTextures = function () {
   for (const t of [map, bump]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / 8, 1 / 8); t.anisotropy = Math.min(8, R.renderer.capabilities.getMaxAnisotropy()); }
   return { map, bump };
 };
+/* Floor (painted / illustrated looks): big hand-painted flagstones of mixed sizes (1–2.5 m) with chipped,
+   irregular edges, dark grout, cracks and brush strokes, plus a few patches of small bricks. Original design.
+   Besides the colour it bakes a normal map (from a height map) and a roughness map: the slabs are worn
+   smooth (they catch the braziers' and the hero's light as soft highlights), the joints stay rough and dark.
+   One seamless 8×8 m tile (slabs never cross its edge). */
+R.makeFlagstoneTextures = function () {
+  const N = 1024, PX = N / 8, CELL = PX / 2, GN = 16, rnd = R.mulberry(0xf1a95705), Rr = (a, b) => a + rnd() * (b - a);
+  const mk = () => { const cv = document.createElement('canvas'); cv.width = cv.height = N; return cv; };
+  const col = mk(), hgt = mk(), rgh = mk(); const c = col.getContext('2d'), h = hgt.getContext('2d'), g = rgh.getContext('2d');
+  c.fillStyle = '#070b0a'; c.fillRect(0, 0, N, N); h.fillStyle = '#000'; h.fillRect(0, 0, N, N); g.fillStyle = '#fff'; g.fillRect(0, 0, N, N);
+  // 1) lay out slabs on a 0.5 m grid (greedy, random sizes) and a few small-brick patches
+  const used = Array.from({ length: GN }, () => new Array(GN).fill(false)), rects = [];
+  const free = (x, y, w, hh) => { if (x + w > GN || y + hh > GN) return false; for (let j = y; j < y + hh; j++) for (let i = x; i < x + w; i++) if (used[j][i]) return false; return true; };
+  const take = (x, y, w, hh, kind) => { for (let j = y; j < y + hh; j++) for (let i = x; i < x + w; i++) used[j][i] = true; rects.push({ x, y, w, h: hh, kind }); };
+  for (let k = 0; k < 1; k++) { const w = 4 + (rnd() * 2 | 0), hh = 3 + (rnd() * 2 | 0), x = rnd() * (GN - w) | 0, y = rnd() * (GN - hh) | 0; if (free(x, y, w, hh)) take(x, y, w, hh, 'bricks'); }
+  for (let y = 0; y < GN; y++) for (let x = 0; x < GN; x++) {
+    if (used[y][x]) continue;
+    let w = 3 + (rnd() * 4 | 0), hh = 3 + (rnd() * 3 | 0); if (rnd() < 0.5) [w, hh] = [hh, w];
+    while (w > 1 && !free(x, y, w, 1)) w--; while (hh > 1 && !free(x, y, w, hh)) hh--;
+    take(x, y, w, hh, 'slab');
+  }
+  // an irregular outline: corners pulled in, edges broken into short jittered segments (chipped stone)
+  const outline = (x0, y0, x1, y1, j) => {
+    const pts = [], seg = (ax, ay, bx, by) => { const n = Math.max(2, Math.round(Math.hypot(bx - ax, by - ay) / 22)); for (let k = 0; k < n; k++) { const t = k / n; const nx = -(by - ay), ny = bx - ax, L = Math.hypot(nx, ny) || 1; const d = (rnd() < 0.12 ? Rr(2, j * 2.2) : Rr(0, j)); pts.push([ax + (bx - ax) * t + nx / L * d, ay + (by - ay) * t + ny / L * d]); } };
+    const cc = () => Rr(2, j * 1.6);
+    seg(x0 + cc(), y0 + cc(), x1 - cc(), y0 + cc()); seg(x1 - cc(), y0 + cc(), x1 - cc(), y1 - cc()); seg(x1 - cc(), y1 - cc(), x0 + cc(), y1 - cc()); seg(x0 + cc(), y1 - cc(), x0 + cc(), y0 + cc());
+    return pts;
+  };
+  const path = (ctx, pts) => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); ctx.closePath(); };
+  const crack = (x, y, ang, len, w) => { const pts = [[x, y]]; for (let k = 0; k < len; k++) { ang += Rr(-0.55, 0.55); x += Math.cos(ang) * Rr(6, 14); y += Math.sin(ang) * Rr(6, 14); pts.push([x, y]); }
+    for (const [ctx, st] of [[c, 'rgba(4,8,7,.85)'], [h, 'rgb(40,40,40)'], [g, '#fff']]) { ctx.strokeStyle = st; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const q of pts) ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+    c.strokeStyle = 'rgba(150,175,165,.16)'; c.lineWidth = 1; c.beginPath(); c.moveTo(pts[0][0] + 1.5, pts[0][1] + 1.5); for (const q of pts) c.lineTo(q[0] + 1.5, q[1] + 1.5); c.stroke(); };
+  const stone = (pts, X, Y, W, Hh, big) => {
+    const v = Rr(-10, 10), gr = Rr(-3, 5);
+    path(c, pts); c.fillStyle = `rgb(${62 + v | 0},${73 + v + gr | 0},${68 + v | 0})`; c.fill();
+    c.save(); path(c, pts); c.clip();
+    // brush strokes along the slab's long side, light and dark (painted look)
+    const horiz = W >= Hh;
+    for (let k = 0; k < (big ? 30 : 8); k++) { c.globalAlpha = Rr(0.04, 0.1); c.fillStyle = rnd() < 0.55 ? '#8fa39a' : '#1a2421'; c.beginPath(); c.ellipse(Rr(X, X + W), Rr(Y, Y + Hh), horiz ? Rr(18, 70) : Rr(4, 14), horiz ? Rr(4, 14) : Rr(18, 70), Rr(-0.15, 0.15), 0, 7); c.fill(); }
+    // worn, lighter centre and darker rim (feet wear the middle smooth)
+    c.globalAlpha = 1; const wg = c.createRadialGradient(X + W * Rr(0.35, 0.65), Y + Hh * Rr(0.35, 0.65), 0, X + W / 2, Y + Hh / 2, Math.max(W, Hh) * 0.75);
+    wg.addColorStop(0, 'rgba(160,185,175,.10)'); wg.addColorStop(0.6, 'rgba(0,0,0,0)'); wg.addColorStop(1, 'rgba(0,0,0,.28)'); c.fillStyle = wg; c.fillRect(X - 10, Y - 10, W + 20, Hh + 20);
+    // painted bevel: a light lip on the top/left edges, shadow on the bottom/right
+    c.lineWidth = big ? 5 : 3; c.strokeStyle = 'rgba(190,215,205,.16)'; c.beginPath(); c.moveTo(pts[pts.length - 1][0], pts[pts.length - 1][1]); for (let i = 0; i < pts.length; i++) { const q = pts[i]; if (q[1] < Y + 8 || q[0] < X + 8) c.lineTo(q[0] + 2, q[1] + 2); else c.moveTo(q[0], q[1]); } c.stroke();
+    c.strokeStyle = 'rgba(0,0,0,.38)'; c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (const q of pts) { if (q[1] > Y + Hh - 8 || q[0] > X + W - 8) c.lineTo(q[0] - 2, q[1] - 2); else c.moveTo(q[0], q[1]); } c.stroke();
+    c.restore();
+    // height: a gently domed top, lower at the edges; roughness: polished middle, rough rim
+    const lv = Rr(205, 230) | 0; path(h, pts); h.fillStyle = `rgb(${lv},${lv},${lv})`; h.fill(); h.save(); path(h, pts); h.clip(); h.lineWidth = big ? 9 : 5; h.strokeStyle = `rgb(${lv - 70},${lv - 70},${lv - 70})`; path(h, pts); h.stroke(); h.lineWidth = big ? 4 : 2; h.strokeStyle = `rgb(${lv - 120},${lv - 120},${lv - 120})`; path(h, pts); h.stroke(); h.restore();
+    path(g, pts); const rg = g.createRadialGradient(X + W / 2, Y + Hh / 2, 0, X + W / 2, Y + Hh / 2, Math.max(W, Hh) * 0.65); const rv = big ? Rr(60, 85) | 0 : Rr(100, 130) | 0; rg.addColorStop(0, `rgb(${rv},${rv},${rv})`); rg.addColorStop(1, `rgb(${rv + 90},${rv + 90},${rv + 90})`); g.fillStyle = rg; g.fill();
+  };
+  for (const r of rects) {
+    const X = r.x * CELL, Y = r.y * CELL, W = r.w * CELL, Hh = r.h * CELL;
+    if (r.kind === 'bricks') {
+      // small bricks (0.25 × 0.5 m), running bond, smaller chips
+      const bw = CELL * 2, bh = CELL;
+      for (let yy = 0; yy < Hh / bh; yy++) for (let xx = -1; xx < W / bw; xx++) {
+        const x0 = X + xx * bw + (yy % 2) * bw / 2, y0 = Y + yy * bh, x1 = Math.min(X + W, x0 + bw), xs = Math.max(X, x0); if (x1 - xs < 12) continue;
+        stone(outline(xs + 3, y0 + 3, x1 - 3, y0 + bh - 3, 2.5), xs, y0, x1 - xs, bh, false);
+      }
+      continue;
+    }
+    const pts = outline(X + 4, Y + 4, X + W - 4, Y + Hh - 4, 5); stone(pts, X, Y, W, Hh, true);
+    if (rnd() < 0.35) { c.save(); path(c, pts); c.clip(); h.save(); path(h, pts); h.clip(); g.save(); path(g, pts); g.clip(); const side = rnd() < 0.5; crack(side ? X + 4 : Rr(X + W * 0.2, X + W * 0.8), side ? Rr(Y + Hh * 0.2, Y + Hh * 0.8) : Y + 4, side ? Rr(-0.4, 0.4) : Math.PI / 2 + Rr(-0.4, 0.4), 6 + (rnd() * 8 | 0), Rr(1.4, 2.4)); c.restore(); h.restore(); g.restore(); }
+  }
+  // damp moss in some joints and a little grime, wrapped so the tile stays seamless
+  for (let k = 0; k < 18; k++) { const x = Rr(0, N), y = Rr(0, N), r = Rr(16, 60), moss = rnd() < 0.6; for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) { const gg = c.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r); gg.addColorStop(0, moss ? 'rgba(40,96,58,.22)' : 'rgba(6,10,9,.3)'); gg.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = gg; c.fillRect(x + ox - r, y + oy - r, r * 2, r * 2); } }
+  // 2) normal map from the height map (Sobel, wrapped)
+  const hd = h.getImageData(0, 0, N, N).data, nc = mk(), nx = nc.getContext('2d'), out = nx.createImageData(N, N), od = out.data, S = 2.2;
+  const H0 = (x, y) => hd[(((y + N) % N) * N + ((x + N) % N)) * 4] / 255;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = (H0(x + 1, y - 1) + 2 * H0(x + 1, y) + H0(x + 1, y + 1)) - (H0(x - 1, y - 1) + 2 * H0(x - 1, y) + H0(x - 1, y + 1));
+    const dy = (H0(x - 1, y + 1) + 2 * H0(x, y + 1) + H0(x + 1, y + 1)) - (H0(x - 1, y - 1) + 2 * H0(x, y - 1) + H0(x + 1, y - 1));
+    let vx = -dx * S, vy = dy * S, vz = 1; const L = Math.hypot(vx, vy, vz); vx /= L; vy /= L; vz /= L;
+    const i = (y * N + x) * 4; od[i] = (vx * 0.5 + 0.5) * 255; od[i + 1] = (vy * 0.5 + 0.5) * 255; od[i + 2] = (vz * 0.5 + 0.5) * 255; od[i + 3] = 255;
+  }
+  nx.putImageData(out, 0, 0);
+  const THREE = T3();
+  const map = new THREE.CanvasTexture(col); map.encoding = THREE.sRGBEncoding;
+  const normal = new THREE.CanvasTexture(nc), rough = new THREE.CanvasTexture(rgh);
+  for (const t of [map, normal, rough]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / 8, 1 / 8); t.anisotropy = Math.min(8, R.renderer.capabilities.getMaxAnisotropy()); }
+  return { map, normal, rough };
+};
 /* Greek-key (meander) band drawn along a horizontal strip: used on floor panels and column bands */
 R.drawMeander = function (c, x, y, len, hh, color, lw) {
   const u = hh; const n = Math.max(1, Math.round(len / u)); const uw = len / n;
@@ -460,8 +542,11 @@ R.bandTexture = function () {
   t.wrapS = T3().RepeatWrapping; return (R._bandTex = t);
 };
 R.floorMaterial = function (tint) {
-  if (!R.brickTex) R.brickTex = H.settings.look === 'classic' ? R.makeBrickTextures() : R.makeSlabTextures();
-  return new (T3().MeshStandardMaterial)({ color: tint, map: R.brickTex.map, bumpMap: R.brickTex.bump, bumpScale: 0.035, roughness: 0.92, metalness: 0.02 });
+  if (!R.brickTex) R.brickTex = H.settings.look === 'classic' ? R.makeBrickTextures() : R.makeFlagstoneTextures();
+  const T = R.brickTex;
+  // flagstones: normal + roughness maps, so lights leave soft sheens on the worn slabs and the joints stay dark
+  if (T.normal) return new (T3().MeshStandardMaterial)({ color: tint, map: T.map, normalMap: T.normal, normalScale: new (T3().Vector2)(0.9, 0.9), roughnessMap: T.rough, roughness: 1, metalness: 0.05 });
+  return new (T3().MeshStandardMaterial)({ color: tint, map: T.map, bumpMap: T.bump, bumpScale: 0.035, roughness: 0.92, metalness: 0.02 });
 };
 /* Rough-cut wall stone: larger irregular blocks, darker; tiles every 2 m */
 R.monolithTexture = function () {
