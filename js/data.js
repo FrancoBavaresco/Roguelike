@@ -467,7 +467,7 @@ for (const id in H.ITEMS) H.ITEMS[id].id = id;
    dashExit     share of the running speed kept when a dash ends without input (with input you just keep running)
    dashRecharge seconds to get one dash charge back · dashCharges: base charges
    camFollow    how fast the camera catches up with the hero (higher = less lag) */
-H.MOVE = { speed: 7.2, accelTime: 0.06, decelTime: 0.08, dashDist: 4.8, dashTime: 0.14, dashExit: 0.35, dashRecharge: 1.35, dashCharges: 2, camFollow: 9 };
+H.MOVE = { speed: 7.2, accelTime: 0.06, decelTime: 0.08, dashDist: 4.8, dashTime: 0.14, dashExit: 0.35, dashRecharge: 0.675, dashCharges: 2, camFollow: 9 };
 // enabled: false switches stamina off (no costs, no bar, no stamina rewards)
 H.STAMINA = { enabled: false, max: 100, regen: 45, delay: 0.3, chargedMul: 1.6 };
 H.ENEMY_DMG_MUL = 1.35;     // direct hits
