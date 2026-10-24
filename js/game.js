@@ -56,12 +56,15 @@ G.weaponKit = p => { const id = p.equip && p.equip.weapon; const it = id && H.IT
 /* Equip/unequip a main weapon: slot I becomes its basic attack, slots II–IV take its attacks. */
 G.refreshWeapon = function (p) {
   if (!p.spells || p.kind !== 'player') return;
-  const k = G.weaponKit(p); const skills = k ? k.skills : [];
+  const k = G.weaponKit(p); const skills = k ? (H.WEAPON_SKILLS_OFF ? [] : k.skills.slice()) : [];
+  const special = k && k.special && H.SPELLS[k.special] ? k.special : null; if (special) skills.push(special);
   G.refreshPrimary(p);
   for (let i = 1; i < 4; i++) { const s = p.spells[i]; if (s && H.SPELLS[s.id].weapon && !skills.includes(s.id)) p.spells[i] = null; }
+  // the Special always sits on slot III (Q)
+  if (special) { const SL = H.SPECIAL_SLOT; const at = p.spells.findIndex(x => x && x.id === special); if (at !== SL) { const prev = p.spells[SL]; p.spells[SL] = at > 0 ? p.spells[at] : { id: special, rank: 1, cd: 0 }; if (at > 0) p.spells[at] = null; if (prev && prev.id !== special) { const f = [1, 2, 3].find(j => !p.spells[j]); if (f != null) p.spells[f] = prev; } } }
   for (const id of skills) { if (p.spells.some(s => s && s.id === id)) continue; const i = [1, 2, 3].find(j => !p.spells[j]); if (i != null) p.spells[i] = { id, rank: 1, cd: 0 }; }
-  // a weapon's ultimate takes the ultimate slot while it is equipped
-  if (k && k.ult) { if (!p.ult || p.ult.id !== k.ult) { const d = H.SPELLS[k.ult]; p.ult = { id: k.ult, rank: 1, cd: 0, charges: d.charges || 0 }; } }
+  // a weapon's ultimate takes the ultimate slot while it is equipped (off with the weapon skills: R is the Aid's Call)
+  if (k && k.ult && !H.WEAPON_SKILLS_OFF) { if (!p.ult || p.ult.id !== k.ult) { const d = H.SPELLS[k.ult]; p.ult = { id: k.ult, rank: 1, cd: 0, charges: d.charges || 0 }; } }
   else if (p.ult && H.SPELLS[p.ult.id].weapon) p.ult = null;
 };
 G.refreshPrimary = function (p) { const id = G.primaryFor(p); if (!p.spells[0] || p.spells[0].id !== id) { const old = p.spells[0]; p.spells[0] = { id, rank: old && !H.SPELLS[old.id].weapon && !H.SPELLS[id].weapon ? old.rank : 1, cd: 0 }; } };
@@ -97,7 +100,7 @@ G.makePlayer = function (idx, seat) {
     dashMax: 2, dashCharges: 2, dashRecharge: 0, dashT: 0, dashDX: 0, dashDZ: 0, dashSpeed: 34, iframes: 0, invuln: 0, hurtT: 0, invulnBlink: 0,
     faceAng: Math.PI, aimDX: 0, aimDZ: -1, aimPt: null, lastEl: null, ward: null, bastionT: 0, mirrorT: 0, tempoT: 0, secondWind: false, ashUsed: false,
     downed: false, bleedT: 0, reviveK: 0, statuses: {}, slowT: 0, dead: false, color: accent, accentCss: idx === 0 ? '#d9a441' : '#46e0c8',
-    intent: null, castLock: 0, dmgDealt: 0, name: idx === 0 ? 'Percy' : 'Rogue II', dashSlowT: 1
+    intent: null, castLock: 0, dmgDealt: 0, divine: 0, name: idx === 0 ? 'Percy' : 'Rogue II', dashSlowT: 1
   };
   if (p.boon === 'ironbark') { p.maxHp += 15; p.hp = p.maxHp; }
   if (p.boon === 'spare_breath') { p.dashMax++; p.dashCharges++; }
@@ -453,7 +456,7 @@ G.updatePlayer = function (p, dt) {
   const it = p.intent || { mx: 0, mz: 0, held: {}, pressed: {}, released: {} };
   // timers
   p.iframes = Math.max(0, p.iframes - dt); p.invuln = Math.max(0, p.invuln - dt); p.hurtT = Math.max(0, p.hurtT - dt); p.dashChainT = Math.max(0, (p.dashChainT || 0) - dt); p.comboT = Math.max(0, (p.comboT || 0) - dt); p.invulnBlink = Math.max(0, p.invulnBlink - dt);
-  p.bastionT = Math.max(0, p.bastionT - dt); p.mirrorT = Math.max(0, p.mirrorT - dt); p.tempoT = Math.max(0, p.tempoT - dt); p.slowT = Math.max(0, p.slowT - dt); p.castLock = Math.max(0, p.castLock - dt);
+  p.bastionT = Math.max(0, p.bastionT - dt); p.mirrorT = Math.max(0, p.mirrorT - dt); p.tempoT = Math.max(0, p.tempoT - dt); p.slowT = Math.max(0, p.slowT - dt); p.castLock = Math.max(0, p.castLock - dt); p.callT = Math.max(0, (p.callT || 0) - dt);
   if (p.ward) { p.ward.t -= dt; if (p.ward.t <= 0 || p.ward.hp <= 0) G.breakWard(p); }
   for (const s of p.spells) if (s) s.cd = Math.max(0, s.cd - dt);
   if (p.ult) { const ud = H.SPELLS[p.ult.id]; p.ult.cd = Math.max(0, p.ult.cd - dt);
@@ -499,8 +502,8 @@ G.updatePlayer = function (p, dt) {
     else if (p.dashT <= 0) { p.vx = 0; p.vz = 0; p.dashTrail = null; p.dashFx = null; p.dashChainT = 0.35; p.dashExt = 0; p.dashImmune = false; }
   } else {
     p.bufDash = Math.max(0, (p.bufDash || 0) - dt);
-    if (p.bufDash > 0 && p.dashCharges > 0 && p.castLock <= 0 && !(p.lungeT > 0)) { p.bufDash = 0; if (p.charge) { p.charge = null; p.anim.chargeK = 0; H.R.chargeArrow(p, false); } G.dash(p, it); }
-    const sp = p.speed * (p.slowT > 0 ? 0.6 : 1) * (p.casting > 0 ? 0.55 : 1) * (p.stSlow || 1) * (p.spinT > 0 ? 1 + ((p.spinSt && p.spinSt.haste) || 0) : 1) * (p.charge ? 0.35 : 1);
+    if (p.bufDash > 0 && p.dashCharges > 0 && p.castLock <= 0 && !(p.lungeT > 0)) { p.bufDash = 0; if (p.charge) { p.charge = null; p.anim.chargeK = 0; H.R.chargeArrow(p, false); } if (p.holdA) { p.holdA = null; p.anim.chargeK = 0; } G.dash(p, it); }
+    const sp = p.speed * (p.slowT > 0 ? 0.6 : 1) * (p.casting > 0 ? 0.55 : 1) * (p.stSlow || 1) * (p.spinT > 0 ? 1 + ((p.spinSt && p.spinSt.haste) || 0) : 1) * (p.charge ? 0.35 : 1) * (p.holdA && p.holdA.k > 0 ? 0.45 : 1);
     const tx = it.mx * sp, tz = it.mz * sp;
     const k = 1 - Math.exp(-dt * 16);
     if (p.lungeT > 0) { p.lungeT -= dt; p.vx = p.lungeDX * p.lungeSpeed; p.vz = p.lungeDZ * p.lungeSpeed; G.lungeStrike(p, false); if (Math.random() < 0.8) H.R.emit(p.x, 0.7 + Math.random() * 0.8, p.z, -p.lungeDX * 2, 0.4, -p.lungeDZ * 2, 0.3, 0.45, 0.05, 0xe8ecf2, 0.7, 0, 3); if (p.lungeT <= 0) { p.vx = 0; p.vz = 0; G.lungeStrike(p, true); } }
@@ -542,13 +545,15 @@ G.updatePlayer = function (p, dt) {
     }
     let trigger = touch ? it.released[a] : it.pressed[a];
     let quiet = false;
-    if (!trigger && !touch && H.settings.autoRepeat && it.held[a] && def.role === 'attack' && s.cd <= 0) { trigger = true; quiet = true; }
+    if (i === 0 && def.hold && !touch) G.holdInput(p, s, def, it.pressed[a], it.held[a], dt);
+    if (!trigger && !touch && H.settings.autoRepeat && it.held[a] && def.role === 'attack' && s.cd <= 0 && !def.hold) { trigger = true; quiet = true; }
     if (!trigger && touch && it.held[a] && !it.touchAiming && H.settings.autoRepeat && def.role === 'attack' && s.cd <= 0 && it.heldLong && it.heldLong[a]) { trigger = true; quiet = true; }
     if (trigger) { if (!G.tryCast(p, i, quiet) && !quiet && it.pressed[a] && s.cd < 0.3) p.bufCast = { i, t: 0.25 }; else if (p.bufCast && p.bufCast.i === i) p.bufCast = null; }
     else if (p.bufCast && p.bufCast.i === i && p.bufCast.t > 0 && G.tryCast(p, i, true)) p.bufCast = null;
   }
   if (p.bufCast) { p.bufCast.t -= dt; if (p.bufCast.t <= 0) p.bufCast = null; }
-  if (p.ult && (touch ? it.released.ult : it.pressed.ult)) G.tryCast(p, 4);
+  if (p.ult && H.SPELLS[p.ult.id].call) G.callInput(p, it, dt, touch);
+  else if (p.ult && (touch ? it.released.ult : it.pressed.ult)) G.tryCast(p, 4);
   // interaction
   G.checkInteract(p, it);
   // regen ward visuals etc handled in model
@@ -822,6 +827,22 @@ G.SPELL = {
       H.R.shake(0.32); G.hitstop = Math.max(G.hitstop, hit ? 0.08 : 0.03); H.R.kickCam(p.aimDX, p.aimDZ, 0.25);
       if (hit) H.audio.play('sword_hit', { heavy: true });
     }, 130);
+  },
+  quake(p, def, st) {
+    // the weapon's Special: a slow overhead blow into the floor, a shockwave all around
+    p.casting = Math.max(p.casting, (def.delay || 300) / 1000 + 0.1); p.castLock = Math.max(p.castLock, (def.delay || 300) / 1000);
+    H.audio.play('sword_swish');
+    G.after(() => {
+      if (p.dead || !G.active) return;
+      const x = p.x, z = p.z, R0 = st.range; let hit = 0;
+      for (const e of G.enemiesNear(x, z, R0)) { const [kx, kz] = H.norm(e.x - x, e.z - z); G.damage(e, st.dmg, hitOpts(p, def, st, { kx, kz, knock: def.knock, phys: true, blunt: true, interrupt: true, stun: def.stun })); hit++; }
+      for (const pr of G.projs) if (pr.team === 1 && !pr.dead && H.dist2(pr.x, pr.z, x, z) < (R0 + 0.6) ** 2) { pr.dead = true; H.R.burst(pr.x, 1, pr.z, 0xe8dcc4, 6, 3, 0.3, 0.3); }
+      H.R.ring(x, z, 0xf2ead8, 0.4, R0 * 1.05, 0.4, 0.12, 1, 0.2); H.R.ring(x, z, 0x9fe8c0, 0.3, R0 * 1.3, 0.55, 0.08, 0.7, 0.1);
+      H.R.burst(x, 0.4, z, 0xe8dcc4, 40 * G.fxMul(p), R0 * 2.4, 0.5, 0.5, { flat: true, palette: [0xe8dcc4, 0xa89c84, 0x6e6a64] });
+      H.R.burst(x + p.aimDX, 0.3, z + p.aimDZ, 0xe8dcc4, 18 * G.fxMul(p), 5, 0.45, 0.45, { up: 5, palette: [0xe8dcc4, 0x8a7a64, 0x4a4038] });
+      H.R.decal(x + p.aimDX * 0.9, z + p.aimDZ * 0.9, 0x6a5a48, R0 * 0.55, 3.5);
+      H.R.shake(0.45); G.hitstop = Math.max(G.hitstop, hit ? 0.08 : 0.03); H.R.kickCam(0, 1, 0.3); H.audio.play('slam'); if (hit) H.audio.play('sword_hit', { heavy: true });
+    }, def.delay || 300);
   },
   spin(p, def, st) {
     // two full turns over st.dur, hitting all around every def.tick
@@ -1201,7 +1222,7 @@ G.damage = function (e, amt, o = {}) {
   if (e.boss) { e.stagger += dmg * (o.interrupt ? 2.2 : o.reaction ? 1.6 : 1) * (o.stun ? 1.5 : 1); }
   // stats
   if (o.spell && run) { run.dmgBySpell[o.spell] = (run.dmgBySpell[o.spell] || 0) + dmg; }
-  if (o.src && o.src.kind === 'player') o.src.dmgDealt += dmg;
+  if (o.src && o.src.kind === 'player') { o.src.dmgDealt += dmg; if (!o.divine) G.gainDivine(o.src, Math.min(H.DIVINE.dealtCap, dmg * H.DIVINE.dealt)); }
   // feedback
   H.R.flashEnemy(e.model);
   if (!o.quiet || dmg >= 8) G.float(e.x + (Math.random() - .5) * 0.6, 2 + (e.boss ? 2.5 : 0), e.z, String(dmg), o.reaction ? 'react' : (o.el ? 'el-' + o.el : ''));
@@ -1412,7 +1433,7 @@ G.hurtPlayer = function (p, dmg, srcName, o = {}) {
   if (p.bastionT > 0) { dmg = Math.round(dmg * 0.35); if (o.by && !o.by.dead && o.by.kind === 'enemy') G.applyStatus(o.by, 'sunder', 1, p, { spell: 'bastion' }); }
   if (p.ward && dmg > 0) { const a = Math.min(p.ward.hp, dmg); p.ward.hp -= a; dmg -= a; G.float(p.x, 2.2, p.z, 'ABSORB', 'small el-frost'); if (p.ward.hp <= 0) G.breakWard(p); if (dmg <= 0) { p.invuln = 0.3; return; } }
   if (p.charms.has('cold_blood') && !o.dot) for (const e of G.enemiesNear(p.x, p.z, 3.5)) G.applyStatus(e, 'chill', 1, p, { spell: 'cold_blood' });
-  p.hp -= dmg; G.run.hitsTaken++;
+  p.hp -= dmg; G.run.hitsTaken++; G.gainDivine(p, dmg * H.DIVINE.taken);
   if (o.by && o.by.elite === 'vampiric') o.by.hp = Math.min(o.by.maxHp, o.by.hp + dmg * 2);
   if (o.burn) G.afflict(p, 'burn', 1, srcName);
   if (o.inflict) G.afflict(p, o.inflict, o.stacks || 1, srcName, { dur: o.inflictDur });
@@ -1622,6 +1643,8 @@ G.makeVeteranOffers = function (owner, kind, count) {
   const branches = id => { const d = H.SPELLS[id]; const u = owner.ups[id] || {}; return Object.keys(d.ups).filter(k => (u[k] || 0) < H.BRANCH_MAX).map(k => ({ type: 'branch', id, stat: k })); };
   const upg = atks.filter(id => branches(id).length);
   const attrs = Object.keys(H.ATTRS).filter(k => ((owner.attrs || {})[k] || 0) < H.ATTRS[k].max);
+  // the Aid blessing (Ultimate on R + Divine Bar) is offered until the hero takes it
+  if (!owner.ult && H.SPELLS.aid_call && kind !== 'rank') push({ type: 'ult', id: 'aid_call' });
   // usually: two upgrades for one attack (A or B), plus one attribute
   if (upg.length) { const id = rng.pick(upg); rng.shuffle(branches(id)).slice(0, kind === 'elite' ? 1 : 2).forEach(push); }
   if (attrs.length) push({ type: 'attr', id: rng.pick(attrs) });
@@ -1715,6 +1738,92 @@ G.buyItem = function (p, prop, i) {
 };
 /* ---------------- Equipment drops ---------------- */
 /* Stamina helpers (only heroes with useStam: the Veteran). Charged attacks out of a dash cost more. */
+/* ---------------- Hold attack (basic attack held down) ----------------
+   The tap already swung; keep holding and the hero winds up (slower walk). Released once ready = the hold attack. */
+G.holdInput = function (p, s, def, pressed, held, dt) {
+  const h = def.hold;
+  if (pressed) { p.holdA = { t: 0, k: 0, full: false }; return; }
+  const A = p.holdA; if (!A) return;
+  const free = p.dashT <= 0 && !(p.spinT > 0) && !(p.lungeT > 0) && !p.charge && !G.modal;
+  if (held && free) {
+    A.t += dt; const k = Math.max(0, Math.min(1, (A.t - h.start) / h.time));
+    if (k > 0 && A.k === 0) H.audio.play('sword_draw');
+    A.k = k; p.anim.chargeK = k; p.faceAng = Math.atan2(-p.aimDX, -p.aimDZ);
+    if (k > 0 && Math.random() < dt * 30) { const a = Math.random() * 6.283, r = 0.6 + k * 1.8; H.R.emit(p.x + Math.cos(a) * r, 0.2, p.z + Math.sin(a) * r, -Math.cos(a) * 2, 1.5, -Math.sin(a) * 2, 0.35, 0.35, 0.09, k >= 1 ? 0xffe9a8 : 0xe8dcc4, 1, 0, 0.3); }
+    if (k >= 1 && !A.full) { A.full = true; H.audio.play('sword_ready'); G.float(p.x, 2.7, p.z, H.t('READY'), 'small good'); H.R.ring(p.x, p.z, 0xffe9a8, 0.4, 1.6, 0.25, 0.1, 0.9, 0.1); }
+    return;
+  }
+  p.holdA = null; p.anim.chargeK = 0;
+  if (A.full && !held && free) G.holdRelease(p, s, def);
+};
+G.holdRelease = function (p, s, def) {
+  const h = def.hold, st = H.spellStats(s.id, s.rank, p);
+  const cost = p.useStam ? Math.round((def.stam || 0) * h.stamMul) : 0;
+  if (cost > p.stam) { G.noStamina(p, 0); return; }
+  if (cost) G.spendStam(p, cost);
+  s.cd = s.maxCd = h.cd; p.comboN = 0; p.comboT = 0;
+  p.aimHoldT = 0.45; p.faceAng = Math.atan2(-p.aimDX, -p.aimDZ); p.casting = 0.14;
+  p.anim.twirlN++;
+  const R0 = h.radius + Math.max(0, st.range - def.range), dmg = Math.round(st.dmg * h.dmgMul), base = Math.atan2(p.aimDX, p.aimDZ);
+  H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0, 0xfff1c8, 0.4); H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0 * 0.7, 0xcfd8e6, 0.32, 0.14);
+  H.R.burst(p.x, 0.5, p.z, 0xffe9a8, 30 * G.fxMul(p), 9, 0.4, 0.45, { flat: true }); H.R.ring(p.x, p.z, 0xffe9a8, 0.4, R0 * 1.1, 0.35, 0.1, 1, 0.2);
+  H.R.shake(0.3); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.06);
+  let hit = 0; for (const e of G.enemiesNear(p.x, p.z, R0)) { const [kx, kz] = H.norm(e.x - p.x, e.z - p.z); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: h.knock, interrupt: true, phys: true, cone: true, spell: def.id })); hit++; }
+  if (hit) H.audio.play('sword_hit', { heavy: true });
+  G.float(p.x, 2.8, p.z, H.t('CHARGED WHIRL'), 'big gold');
+  G.emit('cast', { p, slot: 0, id: s.id });
+};
+/* ---------------- Divine Bar & the Aid's Call (R) ---------------- */
+G.hasCall = p => !!(p && p.ult && H.SPELLS[p.ult.id] && H.SPELLS[p.ult.id].call);
+G.gainDivine = function (p, n) {
+  if (!G.hasCall(p) || !(n > 0)) return;
+  const max = H.DIVINE.seg * H.DIVINE.segs, before = Math.floor(p.divine / H.DIVINE.seg);
+  p.divine = Math.min(max, p.divine + n);
+  const after = Math.floor(p.divine / H.DIVINE.seg);
+  if (after > before) { H.audio.play(after >= H.DIVINE.segs ? 'sword_ready' : 'ui_ok'); if (after >= H.DIVINE.segs) G.float(p.x, 3, p.z, H.t('GREATER CALL READY'), 'big gold'); }
+};
+G.callInput = function (p, it, dt, touch) {
+  const D = H.DIVINE, full = p.divine >= D.seg * D.segs - 0.01;
+  if (p.callT > 0 || G.modal) { p.callHold = null; return; }
+  if (touch) { if (it.released.ult) G.divineCall(p, full && it.heldLong && it.heldLong.ult); return; }
+  if (it.pressed.ult) {
+    if (p.divine < D.seg) { G.float(p.x, 2.6, p.z, H.t('DIVINE BAR EMPTY'), 'small'); H.audio.play('ui_deny'); G.emit('deny', { p, slot: 4, why: 'cd' }); return; }
+    if (!full) { G.divineCall(p, false); return; }
+    p.callHold = { t: 0 };
+  }
+  if (p.callHold) {
+    if (it.held.ult) { p.callHold.t += dt; if (p.callHold.t >= D.holdT) { p.callHold = null; G.divineCall(p, true); } }
+    else { p.callHold = null; G.divineCall(p, false); }
+  }
+};
+G.divineCall = function (p, greater) {
+  const D = H.DIVINE, def = H.SPELLS[p.ult.id]; if (p.divine < D.seg) return;
+  if (p.dashT > 0 && p.dashImmune) { p.dashImmune = false; }
+  const col = 0x6dffb0, deep = 0x1f8a5a, hit = { src: p, el: 'venom', spell: def.id, role: 'attack', phys: false, interrupt: true, divine: true };
+  p.anim.castN++; p.casting = 0.3; p.aimHoldT = 0.3;
+  G.run.castsBySpell[def.id] = (G.run.castsBySpell[def.id] || 0) + 1;
+  const blast = (x, z, r, dmg, knock) => {
+    for (const e of G.enemiesNear(x, z, r)) { const [kx, kz] = H.norm(e.x - x, e.z - z); G.damage(e, dmg, Object.assign({}, hit, { kx, kz, knock })); }
+    for (const pr of G.projs) if (pr.team === 1 && !pr.dead && H.dist2(pr.x, pr.z, x, z) < r * r) { pr.dead = true; H.R.burst(pr.x, 1, pr.z, col, 6, 3, 0.3, 0.3); }
+    H.R.ring(x, z, 0xeafff2, 0.5, r * 1.02, 0.35, 0.12, 1, 0.08); H.R.ring(x, z, col, 0.5, r, 0.5, 0.1, 1, 0.2); H.R.ring(x, z, deep, 0.4, r * 1.2, 0.7, 0.08, 0.8, 0.1);
+    H.R.burst(x, 0.5, z, col, 90 * G.fxMul(p), r * 2.2, 0.7, 0.7, { flat: true, palette: [col, 0xc8ffe0, deep, 0xffffff] });
+    H.R.burst(x, 0.5, z, col, 40 * G.fxMul(p), 8, 0.9, 0.8, { up: 8, grav: 6, palette: [col, deep] });
+    H.R.flash(x, z, col, r * 1.2, 0.4); H.R.decal(x, z, deep, r * 0.7, 4);
+  };
+  if (!greater) {
+    p.divine -= D.seg; p.iframes = Math.max(p.iframes, 0.5);
+    G.float(p.x, 3.1, p.z, H.t('CALL'), 'big gold');
+    blast(p.x, p.z, def.radius, def.dmg, def.knock); H.R.shake(0.6); G.hitstop = Math.max(G.hitstop, 0.08); H.audio.play('nova_boom');
+    G.emit('cast', { p, slot: 4, id: def.id }); return;
+  }
+  // Greater Call: spends the whole bar; untouchable while the waves roll out, then one last blast
+  p.divine = 0; p.callT = def.gInv; p.invuln = Math.max(p.invuln, def.gInv);
+  G.float(p.x, 3.3, p.z, H.t('GREATER CALL'), 'big gold'); H.audio.play('nova_charge'); H.R.flash(p.x, p.z, col, 4, 0.5);
+  const gap = Math.round((def.gInv - 0.4) * 1000 / (def.gPulses + 1));
+  for (let k = 1; k <= def.gPulses; k++) G.after(() => { if (!G.active || p.dead) return; blast(p.x, p.z, def.gRadius * (0.7 + 0.3 * k / def.gPulses), def.gDmg, 6); H.R.shake(0.3); H.audio.play('slam'); }, gap * k);
+  G.after(() => { if (!G.active || p.dead) return; blast(p.x, p.z, def.gRadius * 1.15, def.gFinal, 16); H.R.shake(1); H.R.kickCam(0, 1, 0.5); G.hitstop = Math.max(G.hitstop, 0.12); H.audio.play('nova_boom'); }, gap * (def.gPulses + 1));
+  G.emit('cast', { p, slot: 4, id: def.id });
+};
 /* Third hit of the sword combo: a short wind-up, then a heavy cut straight ahead in a 45° wedge (nothing at the sides or behind). */
 G.comboFinisher = function (p, def, st) {
   const f = def.combo.finisher, dmg = Math.round(st.dmg * f.dmgMul);

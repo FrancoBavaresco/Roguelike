@@ -78,7 +78,7 @@ H.loadSave();
 /* ---------------- Input ---------------- */
 const ACTIONS = ['up', 'down', 'left', 'right', 'cast1', 'cast2', 'cast3', 'cast4', 'ult', 'dash', 'interact', 'map', 'inventory', 'pause'];
 H.ACTIONS = ACTIONS;
-H.ACTION_NAMES = { up: 'Move up', down: 'Move down', left: 'Move left', right: 'Move right', cast1: 'Spell slot I', cast2: 'Spell slot II', cast3: 'Spell slot III', cast4: 'Spell slot IV', ult: 'Ultimate', dash: 'Dash', interact: 'Interact', map: 'Chamber map', inventory: 'Inventory', pause: 'Pause' };
+H.ACTION_NAMES = { up: 'Move up', down: 'Move down', left: 'Move left', right: 'Move right', cast1: 'Basic attack · slot I', cast2: 'Spell slot II', cast3: 'Special · slot III', cast4: 'Spell slot IV', ult: 'Ultimate', dash: 'Dash', interact: 'Interact', map: 'Chamber map', inventory: 'Inventory', pause: 'Pause' };
 const PAD_NAMES = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'View', 'Menu', 'LS', 'RS', 'D↑', 'D↓', 'D←', 'D→', 'Home'];
 H.padName = i => PAD_NAMES[i] || ('B' + i);
 H.keyName = code => {

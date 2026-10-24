@@ -254,16 +254,18 @@ for (const id of H.PRIMARY) H.SPELLS[id].dmg = Math.round(H.SPELLS[id].dmg * 1.2
    charged blow that hits all around him (charge.*). */
 /* Weapon kits: a main weapon replaces the primary (slot I) and fills slots II–IV with its attacks. */
 H.WEAPON_KITS = {
-  sword: { name: 'Sword', primary: 'sword_slash', skills: ['sword_thrust', 'sword_cleave', 'sword_spin'] },
+  sword: { name: 'Sword', primary: 'sword_slash', special: 'sword_quake', skills: ['sword_thrust', 'sword_cleave', 'sword_spin'] },
   axe: { name: 'Two-handed Axe', primary: 'axe_chop', skills: ['axe_sweep', 'axe_smash', 'axe_backhand'], ult: 'axe_throw', twoHand: true, trait: 'Its blows cut straight through shields.' },
-  bastard: { name: 'Bastard Sword', primary: 'bastard_slash', skills: ['bastard_thrust', 'bastard_cleave', 'bastard_spin'], ult: 'bastard_execute', twoHand: true, trait: 'Every blow leaves Bleeding.' }
+  bastard: { name: 'Bastard Sword', primary: 'bastard_slash', special: 'bastard_quake', skills: ['bastard_thrust', 'bastard_cleave', 'bastard_spin'], ult: 'bastard_execute', twoHand: true, trait: 'Every blow leaves Bleeding.' }
 };
 H.SPELLS.sword_slash = { id: 'sword_slash', stam: 7, ups: { range: 0.3, dmg: 0.2 }, weapon: 'sword', dtype: 'slash', hero: 'knight', name: 'Sword Slash', el: 'stone', role: 'attack', kind: 'melee', glyph: 'k_slash', cd: 0.3, cost: 0, range: 2.9, dmg: 7, angle: 100, knock: 1.5, swing: 'slash', sfx: 'sword',
   // the charged whirl out of a dash is switched off for now (chargeOff); its Quick Attack is a fast 45° cut straight ahead
   chargeOff: { window: 0.35, dmgMul: 1.9, radius: 2.8, knock: 6 }, quick: { angle: 45, rangeMul: 1.1 },
   // ground combo: two fast slashes, then a slower, heavier cut straight ahead (45°); after it, a short pause
+  // hold the button: after the tap's slash, keep holding to wind up a full-circle Charged Whirl
+  hold: { start: 0.22, time: 0.55, dmgMul: 2.4, radius: 3.1, knock: 8, stamMul: 1.6, cd: 0.45 },
   combo: { gap: 0.1, window: 0.6, recover: 0.6, finisher: { dmgMul: 1.8, angle: 45, rangeMul: 1.1, delay: 0.24, knock: 5 } },
-  desc: s => `Quick, light slash in front of you: ${s.dmg} damage. Combo: two fast slashes, then a heavier cut straight ahead, 45° (${Math.round(s.dmg * 1.8)}). Slash during a dash, or right after it, for up to 3 quick cuts straight ahead (45°): ${Math.round(s.dmg * 1.4)} damage each.` };
+  desc: s => `Quick, light slash in front of you: ${s.dmg} damage. Combo: two fast slashes, then a heavier cut straight ahead, 45° (${Math.round(s.dmg * 1.8)}). Slash during a dash, or right after it, for up to 3 quick cuts straight ahead (45°): ${Math.round(s.dmg * 1.4)} damage each. Hold the button to wind up a Charged Whirl all around you: ${Math.round(s.dmg * 2.4)} damage.` };
 H.SPELLS.sword_thrust = { id: 'sword_thrust', stam: 22, ups: { range: 0.6, dmg: 0.25 , cd: 0.12 }, weapon: 'sword', dtype: 'pierce', hero: 'knight', name: 'Thrust', el: 'stone', role: 'attack', kind: 'thrust', glyph: 'k_thrust', cd: 5, cost: 0, range: 3.6, dmg: 16, width: 0.7, status: 'bleed', stacks: 2, lunge: { min: 2.0, max: 6.6, tip: 1.2, speed: 25, fullSpeed: 32 }, chargeable: { time: 0.8, hold: 1.2, fullMul: 1.3 },
   desc: s => `Hold to wind up: the arrow on the floor shows exactly how far you will dash. Release to lunge along it, piercing every foe on the way for ${s.dmg} damage and Bleeding. Fully charged: faster and +30% damage.` };
 H.SPELLS.sword_cleave = { id: 'sword_cleave', stam: 30, ups: { range: 0.4, dmg: 0.25 , cd: 0.12 }, weapon: 'sword', dtype: 'slash', hero: 'knight', name: 'Mighty Blow', el: 'stone', role: 'attack', kind: 'cleave', glyph: 'k_cleave', cd: 10, cost: 0, range: 3.2, dmg: 32, angle: 90, knock: 7,
@@ -291,6 +293,19 @@ for (const [src, id, name] of [['sword_thrust', 'bastard_thrust', 'Long Thrust']
 }
 H.SPELLS.bastard_execute = { id: 'bastard_execute', stam: 30, ups: { dmg: 0.25, cd: 0.12 }, weapon: 'bastard', dtype: 'slash', hero: 'knight', name: 'Execution', el: 'stone', role: 'attack', kind: 'execute', glyph: 'k_execute', ult: true, cd: 14, charges: 3, cost: 0, range: 3.8, dmg: 95, angle: 80, swing: 'slash', sfx: 'sword',
   desc: s => `ULTIMATE · 3 charges. A devastating cut on one foe: ${s.dmg} damage, Broken and Bleeding. If it kills in one hit, the charge comes straight back.` };
+/* ---- The hero's three starting abilities: basic attack (click, some weapons add a hold attack), the weapon's
+   Special (Q) and the Ultimate (R), which needs the Aid blessing. The weapons' old skills (slots II–IV) are off. */
+H.WEAPON_SKILLS_OFF = true;
+H.SPECIAL_SLOT = 2;   // slot III = Q
+H.SPELLS.sword_quake = { id: 'sword_quake', stam: 18, ups: { range: 0.35, dmg: 0.25, cd: 0.12 }, weapon: 'sword', special: true, dtype: 'blunt', hero: 'knight', name: 'Seismic Strike', el: 'stone', role: 'attack', kind: 'quake', glyph: 'k_nova', cd: 2.2, cost: 0, range: 3.4, dmg: 16, knock: 10, stun: 0.35, delay: 300, swing: 'smash', sfx: 'sword',
+  desc: s => `SPECIAL. Raise the sword and drive it into the floor: a shockwave all around you (${s.range.toFixed(1)} m) for ${s.dmg} damage that hurls foes back, interrupts them and wipes out enemy projectiles. Slow.` };
+H.SPELLS.bastard_quake = Object.assign({}, H.SPELLS.sword_quake, { id: 'bastard_quake', weapon: 'bastard', name: 'Great Quake', range: 4.2, dmg: 22, stam: 22, status: 'bleed', stacks: 1, ups: { range: 0.35, dmg: 0.25, cd: 0.12 } });
+/* Divine Bar: fills when the hero deals and takes damage (only with the Aid blessing). One segment = a Call;
+   a full bar, held, = a Greater Call that spends all of it. */
+H.DIVINE = { seg: 100, segs: 3, dealt: 0.5, dealtCap: 12, taken: 2.2, holdT: 0.4 };
+H.SPELLS.aid_call = { id: 'aid_call', call: true, hero: 'knight', name: 'Call of the Seal', el: 'venom', role: 'attack', kind: 'call', glyph: 'k_nova', ult: true, cd: 0, cost: 0, range: 0,
+  dmg: 40, radius: 4.8, knock: 12, gDmg: 45, gRadius: 7, gPulses: 5, gFinal: 120, gInv: 3,
+  desc: s => `AID BLESSING · ULTIMATE (R). Hitting foes and taking hits fills the Divine Bar (3 segments). Spend one segment for a Call: a burst of green fire around you, ${s.dmg} damage, a big shove, and enemy shots wiped out. With the bar full, hold R for a Greater Call: you can't be hurt for ${s.gInv} s while ${s.gPulses} waves of ${s.gDmg} damage roll out, then a final blast of ${s.gFinal}.` };
 /* Quick Attack: the basic attack used during a dash or right after it (weapons with a dash strike of their own use it) */
 H.QUICK_ATTACK = { dmgMul: 1.4, max: 3, cd: 0.08, window: 0.35 };
 H.SPELLS.fist_strike = { id: 'fist_strike', stam: 6, ups: { range: 0.25, dmg: 0.2 }, dtype: 'blunt', hero: 'knight', name: 'Fist Strike', el: 'stone', role: 'attack', kind: 'melee', glyph: 'k_fist', cd: 0.38, cost: 0, range: 1.9, dmg: 9, angle: 110, knock: 2.5,

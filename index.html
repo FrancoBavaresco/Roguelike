@@ -166,6 +166,12 @@ h1, h2, h3 { margin: 0; font-weight: 700; text-wrap: balance; }
 .pst { display: flex; flex-wrap: wrap; gap: 4px; min-height: 0; }
 .pst span { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px; border-radius: 6px; background: rgba(10,6,12,.72); }
 .pst em { font-style: normal; font-size: 11px; font-weight: 800; color: #fff; }
+.divine { display: flex; gap: 3px; height: 9px; margin-top: 3px; }
+.divine .dseg { position: relative; flex: 1; background: rgba(6,16,12,.85); border: 1px solid rgba(109,255,176,.28); overflow: hidden; transform: skewX(-18deg); }
+.divine .dseg i { position: absolute; inset: 0; transform-origin: left; background: linear-gradient(180deg, #4fd394, #1f8a5a); }
+.divine .dseg.on i { background: linear-gradient(180deg, #b6ffd8, #3fe08f); }
+.divine .dseg.on { border-color: rgba(182,255,216,.8); box-shadow: 0 0 6px rgba(109,255,176,.55); }
+.divine.full .dseg { animation: divfull 1s ease-in-out infinite; } @keyframes divfull { 50% { box-shadow: 0 0 12px rgba(109,255,176,.95); } }
 .bar.xp { height: 10px; border-color: rgba(244,213,138,.35); } .bar.xp .fill { background: linear-gradient(90deg, #b07d26, #f4d58a); } .bar.xp .tx { font-size: 9px; letter-spacing: .04em; }
 .bar.xp.lvl { animation: lvl .7s ease-out; } @keyframes lvl { 0% { box-shadow: 0 0 0 0 rgba(244,213,138,.9); } 100% { box-shadow: 0 0 0 10px rgba(244,213,138,0); } }
 .bar.mp .fill { background: linear-gradient(180deg, #a99bff, #5b47d6); }
