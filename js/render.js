@@ -574,6 +574,34 @@ R.wallMaterial = function (tint) {
   }
   return new (T3().MeshStandardMaterial)({ color: tint, map: R.wallTex, roughness: 1, metalness: 0 });
 };
+/* Room outline on a 2 m lattice: cells inside the walkable area, and the ring of cells right around it (walls). */
+R.roomGrid = function (room) {
+  const b = room.bounds, x0 = b.minX - 4, z0 = b.minZ - 4, nx = Math.round((b.maxX - b.minX) / 2) + 4, nz = Math.round((b.maxZ - b.minZ) / 2) + 4;
+  const ins = []; for (let j = 0; j < nz; j++) { ins.push([]); for (let i = 0; i < nx; i++) ins[j].push(H.G.inRoom(x0 + i * 2 + 1, z0 + j * 2 + 1, 0, room)); }
+  const inside = (i, j) => i >= 0 && j >= 0 && i < nx && j < nz && ins[j][i];
+  const ring = (i, j) => !inside(i, j) && [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]].some(([a, c]) => inside(i + a, j + c));
+  return { x0, z0, nx, nz, inside, ring, cx: i => x0 + i * 2 + 1, cz: j => z0 + j * 2 + 1 };
+};
+// wall blocks: every ring cell, with the side of the floor it faces
+R.wallCells = function (g) {
+  const out = [];
+  for (let j = 0; j < g.nz; j++) for (let i = 0; i < g.nx; i++) { if (!g.ring(i, j)) continue;
+    const dir = g.inside(i, j + 1) ? 'n' : g.inside(i + 1, j) ? 'w' : g.inside(i - 1, j) ? 'e' : g.inside(i, j - 1) ? 's' : (g.inside(i - 1, j + 1) || g.inside(i + 1, j + 1)) ? 'n' : 's';
+    out.push({ x: g.cx(i), z: g.cz(j), dir }); }
+  return out;
+};
+// outline loop (world x, z corners) of a set of lattice cells
+R.cellOutline = function (g, inSet) {
+  const next = new Map(), key = (a, b) => a + ',' + b;
+  for (let j = 0; j < g.nz; j++) for (let i = 0; i < g.nx; i++) { if (!inSet(i, j)) continue;
+    const X0 = g.x0 + i * 2, X1 = X0 + 2, Z0 = g.z0 + j * 2, Z1 = Z0 + 2;
+    if (!inSet(i, j - 1)) next.set(key(X0, Z0), [X1, Z0]); if (!inSet(i + 1, j)) next.set(key(X1, Z0), [X1, Z1]);
+    if (!inSet(i, j + 1)) next.set(key(X1, Z1), [X0, Z1]); if (!inSet(i - 1, j)) next.set(key(X0, Z1), [X0, Z0]); }
+  const [k0] = next.keys(); if (!k0) return [];
+  const pts = []; let k = k0, guard = 0; do { const [x, z] = k.split(',').map(Number); pts.push([x, z]); const n = next.get(k); if (!n) break; k = key(n[0], n[1]); } while (k !== k0 && guard++ < 10000);
+  // drop the points in the middle of straight runs
+  return pts.filter((p, i) => { const a = pts[(i - 1 + pts.length) % pts.length], c = pts[(i + 1) % pts.length]; return (p[0] - a[0]) * (c[1] - p[1]) - (p[1] - a[1]) * (c[0] - p[0]) !== 0; });
+};
 R.buildChamber = function (room, theme) {
   const THREE = T3();
   R.clearChamber();
@@ -585,8 +613,9 @@ R.buildChamber = function (room, theme) {
   // floor: one continuous paver surface (gray brick, running bond) with real holes for pits
   const tint = H.settings.look === 'classic' ? new THREE.Color(0xffffff).lerp(new THREE.Color(theme.light), 0.12).multiplyScalar(0.7) : new THREE.Color(0xffffff).lerp(new THREE.Color(theme.rune), 0.14).multiplyScalar(0.6);
   const floorMat = R.floorMaterial(tint);
-  const shape = new THREE.Shape(); const fx0 = b.minX - 2.2, fx1 = b.maxX + 2.2, fz0 = b.minZ - 2.2, fz1 = b.maxZ + 2.2;
-  shape.moveTo(fx0, -fz1); shape.lineTo(fx1, -fz1); shape.lineTo(fx1, -fz0); shape.lineTo(fx0, -fz0); shape.lineTo(fx0, -fz1);
+  const grid = R.roomGrid(room); room._grid = grid;
+  const shape = new THREE.Shape(); const loop = R.cellOutline(grid, (i, j) => grid.inside(i, j) || grid.ring(i, j));
+  loop.forEach(([x, z], k) => k ? shape.lineTo(x, -z) : shape.moveTo(x, -z));
   for (const p of room.pits) { const hole = new THREE.Path(); hole.absarc(p.x, -p.z, p.r + 0.05, 0, Math.PI * 2, true); shape.holes.push(hole); }
   const fgeo = new THREE.ShapeGeometry(shape, 24); fgeo.rotateX(-Math.PI / 2);
   const floor = new THREE.Mesh(fgeo, floorMat); floor.receiveShadow = true; floor.position.y = 0; R.chamber.add(floor);
@@ -602,7 +631,7 @@ R.buildChamber = function (room, theme) {
   for (const p of room.pits) { const col = new THREE.Mesh(new THREE.CylinderGeometry(p.r + 0.05, p.r + 0.05, 1.2, 32, 1, true), R.std(0x1a181c, { side: THREE.BackSide, roughness: 1 })); col.position.set(p.x, -0.6, p.z); R.chamber.add(col); }
   // rune circles on floor
   for (let k = 0; k < 3; k++) {
-    const r = 1.5 + R.drand() * 2.5; const x = R.drandRange(b.minX + 3, b.maxX - 3), z = R.drandRange(b.minZ + 3, b.maxZ - 3);
+    const r = 1.5 + R.drand() * 2.5; let x = R.drandRange(b.minX + 3, b.maxX - 3), z = R.drandRange(b.minZ + 3, b.maxZ - 3); for (let t = 0; t < 8 && !H.G.inRoom(x, z, r * 0.6, room); t++) { x = R.drandRange(b.minX + 3, b.maxX - 3); z = R.drandRange(b.minZ + 3, b.maxZ - 3); }
     const m = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: R.texRune, color: theme.rune, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending }));
     m.rotation.x = -Math.PI / 2; m.rotation.z = R.drand() * 6; m.position.set(x, 0.03, z); R.chamber.add(m);
   }
@@ -617,13 +646,16 @@ R.buildChamber = function (room, theme) {
     if (!low && R.drand() < 0.35) { const s = new THREE.Mesh(new THREE.BoxGeometry(w * 0.6, 0.08, d * 1.02), runeMat); s.position.set(x, h * (0.3 + R.drand() * 0.5), z); R.chamber.add(s); if (east) { s.userData.eastWall = true; s.userData.rune = true; } }
   };
   const doorXs = room.doors.map(d => d.x);
-  for (let x = b.minX - 1; x <= b.maxX + 1; x += 2) {
-    const nearDoor = doorXs.some(dx => Math.abs(dx - x) < 2.2);
-    if (!nearDoor) addBlock(x, b.minZ - 1, 2, 3 + R.drand() * 2.5, 2, false, false, 'n');
-    else addBlock(x, b.minZ - 1.6, 2, 0.5, 0.8, true);
-    addBlock(x, b.maxZ + 1, 2, 0.5, 2, true);
+  // one 2×2 m block on every cell of the ring around the floor: north faces tall (doors cut a low gate),
+  // west/east faces tall and fading toward the south, south faces low so the camera sees in
+  room._faces = [];
+  for (const w of R.wallCells(grid)) {
+    const { x, z, dir } = w, side = 2.4 + R.drand() * 2 * (1 - (z - b.minZ) / D);
+    if (dir === 'n') { const gate = room.doors.some(d => Math.abs(d.x - x) < 2.2 && Math.abs(d.z - (z + 0.4)) < 1.2); if (gate) addBlock(x, z - 0.6, 2, 0.5, 0.8, true); else { addBlock(x, z, 2, 3 + R.drand() * 2.5, 2, false, false, 'n'); room._faces.push({ x, z: z + 1.1, ry: 0 }); } }
+    else if (dir === 'w') { addBlock(x, z, 2, side, 2, false, false, 'w'); room._faces.push({ x: x + 1.1, z, ry: Math.PI / 2 }); }
+    else if (dir === 'e') addBlock(x, z, 2, side, 2, false, true);
+    else addBlock(x, z, 2, 0.5, 2, true);
   }
-  for (let z = b.minZ - 1; z <= b.maxZ + 1; z += 2) { addBlock(b.minX - 1, z, 2, 2.4 + R.drand() * 2 * (1 - (z - b.minZ) / D), 2, false, false, 'w'); addBlock(b.maxX + 1, z, 2, 2.4 + R.drand() * 2 * (1 - (z - b.minZ) / D), 2, false, true); }
   // pillars: stacks of big, solid stone blocks
   if (!R.blockTex) {
     const N = 256; const cv = document.createElement('canvas'); cv.width = cv.height = N; const c = cv.getContext('2d');
@@ -681,7 +713,10 @@ R.buildChamber = function (room, theme) {
     g.position.set(v.x, 0, v.z); R.chamber.add(g); v.mesh = core;
   }
   // braziers along side walls
-  const brz = [[b.minX + 0.6, b.minZ + D * 0.3], [b.maxX - 0.6, b.minZ + D * 0.3], [b.minX + 0.6, b.minZ + D * 0.8], [b.maxX - 0.6, b.minZ + D * 0.8]];
+  const mh = room.main || b, MD = mh.maxZ - mh.minZ, brz = [];
+  for (const k of [0.3, 0.8]) for (const sx of [-1, 1]) { const x = sx < 0 ? mh.minX + 0.6 : mh.maxX - 0.6; let z = null;
+    for (const t of [k, k - 0.12, k + 0.12, k - 0.24, k + 0.24, 0.12, 0.92]) { const zz = mh.minZ + MD * t; if (!H.G.inRoom(x + sx * 1.6, zz, 0, room)) { z = zz; break; } }   // a real wall behind it, not an opening
+    if (z != null) brz.push([x, z]); }
   brz.forEach((p, i) => {
     const g = new THREE.Group();
     const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.2, 0.4, 6), R.std(0x2a2020, { metalness: 0.5 })); bowl.position.y = 1.1; g.add(bowl);
@@ -957,9 +992,7 @@ R.buildDecor = function (room, theme, wallTops, doorXs) {
     else { if (k < 0.45) bust(x, y, z, rnd() * 6.28, rnd() < 0.4); else if (k < 0.8) crystal(x, y, z); else rock('stone', x, y, z, 0.3); }
   }
   // ---- wall faces (north and west) ----
-  const faces = [];
-  for (let x = b.minX + 1.5; x <= b.maxX - 1.5; x += 2.2) if (!nearDoor(x)) faces.push({ x, z: b.minZ + 0.1, ry: 0 });
-  for (let z = b.minZ + 1.5; z <= b.maxZ - 2.5; z += 2.2) faces.push({ x: b.minX + 0.1, z, ry: Math.PI / 2 });
+  const faces = (room._faces || []).filter(f => !nearDoor(f.x) || f.ry);
   for (const f of faces) {
     if (rnd() < 0.6) continue;
     if (depth === 1) chain(f.x, f.z, 2.6, 0.8 + rnd() * 0.9, f.ry);
@@ -970,12 +1003,12 @@ R.buildDecor = function (room, theme, wallTops, doorXs) {
   const band = () => { const side = rnd() * 4 | 0, u = rnd(); const d = 0.3 + rnd() * 0.9;
     if (side === 0) return [b.minX + 1 + u * (b.maxX - b.minX - 2), b.minZ + d]; if (side === 1) return [b.minX + d, b.minZ + 1 + u * (b.maxZ - b.minZ - 2)];
     if (side === 2) return [b.maxX - d, b.minZ + 1 + u * (b.maxZ - b.minZ - 2)]; return [b.minX + 1 + u * (b.maxX - b.minX - 2), b.maxZ - d]; };
-  const clearOf = (x, z) => !room.pits.some(p => Math.hypot(p.x - x, p.z - z) < p.r + 0.8) && !room.doors.some(d => Math.abs(d.x - x) < 2) && !(room.prop && Math.hypot(room.prop.x - x, room.prop.z - z) < 2.5);
+  const clearOf = (x, z) => H.G.inRoom(x, z, 0.3, room) && !room.pits.some(p => Math.hypot(p.x - x, p.z - z) < p.r + 0.8) && !room.doors.some(d => Math.abs(d.x - x) < 2) && !(room.prop && Math.hypot(room.prop.x - x, room.prop.z - z) < 2.5);
   for (let i = 0; i < 14; i++) { const [x, z] = band(); if (!clearOf(x, z)) continue; if (depth === 1 && i % 2) boneBit(x, z); else patch(x, z, 0.4 + rnd() * 0.7); }
   // glowing moss and slime across the floor: a dark stain with a faint glow of the depth's colour on top
   for (let i = 0; i < 12; i++) { const x = b.minX + 1 + rnd() * (b.maxX - b.minX - 2), z = b.minZ + 1 + rnd() * (b.maxZ - b.minZ - 2); if (!clearOf(x, z)) continue; const r = 0.5 + rnd() * 1.1; patch(x, z, r * 1.15); patch(x, z, r, 'glowpatch'); }
   // ---- carved floor panels (greek-key border), flat, in open floor ----
-  const freeFor = (x, z, half) => !room.pits.some(p => Math.hypot(p.x - x, p.z - z) < p.r + half * 1.5) && !room.pillars.some(p => Math.hypot(p.x - x, p.z - z) < p.r + half * 1.5) && !room.doors.some(d => Math.abs(d.x - x) < 2.5 && Math.abs(b.minZ - z) < 3.5) && !(room.prop && Math.hypot(room.prop.x - x, room.prop.z - z) < 3);
+  const freeFor = (x, z, half) => H.G.inRoom(x, z, half + 1, room) && !room.pits.some(p => Math.hypot(p.x - x, p.z - z) < p.r + half * 1.5) && !room.pillars.some(p => Math.hypot(p.x - x, p.z - z) < p.r + half * 1.5) && !room.doors.some(d => Math.abs(d.x - x) < 2.5 && Math.abs(b.minZ - z) < 3.5) && !(room.prop && Math.hypot(room.prop.x - x, room.prop.z - z) < 3);
   const panels = []; const tries = [[(b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2]];
   for (let k = 0; k < 10; k++) tries.push([b.minX + 3 + rnd() * (b.maxX - b.minX - 6), b.minZ + 3 + rnd() * (b.maxZ - b.minZ - 6)]);
   for (const [x, z] of tries) { if (panels.length >= 2) break; const sx = Math.round(x), sz = Math.round(z); if (freeFor(sx, sz, 1.4) && panels.every(([px, pz]) => Math.hypot(px - sx, pz - sz) > 5)) panels.push([sx, sz]); }

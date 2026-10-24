@@ -10,7 +10,8 @@ function steer(e, tx, tz, mul = 1, away = false, strafe = 0) {
   if (strafe) { const sx = -dz * strafe, sz = dx * strafe; dx = dx * 0.4 + sx; dz = dz * 0.4 + sz; }
   const obs = e.flying ? room.pillars : room.pillars.concat(room.pits);
   for (const p of obs) { const ox = e.x - p.x, oz = e.z - p.z; const d = Math.hypot(ox, oz) || 0.01; const m = p.r + e.r + 0.8; if (d < m + 1.6) { const w = (m + 1.6 - d) / 1.6; dx += ox / d * w * 1.3; dz += oz / d * w * 1.3; } }
-  const b = room.bounds; if (e.x < b.minX + 2) dx += 1; if (e.x > b.maxX - 2) dx -= 1; if (e.z < b.minZ + 2) dz += 1; if (e.z > b.maxZ - 2) dz -= 1;
+  // keep off the walls (the room may be a hall with annexes): lean toward the nearest point 2 m inside
+  if (!G.inRoom(e.x, e.z, 2)) { const c = G.clampToRoom(e.x, e.z, 2); const [wx, wz] = H.norm(c.x - e.x, c.z - e.z); dx += wx; dz += wz; }
   [dx, dz] = H.norm(dx, dz);
   e.vx = dx * e.speed * mul; e.vz = dz * e.speed * mul;
 }
@@ -97,7 +98,7 @@ AI.update = function (e, dt) {
     const [dx, dz] = ai.dir; e.vx = dx * 20; e.vz = dz * 20; ai.t += dt; faceTo(e, e.x + dx, e.z + dz, dt, 30);
     if (Math.random() < 0.8) H.R.emit(e.x, 0.3, e.z, -dx * 3 + H.rand(-1, 1), 1, -dz * 3 + H.rand(-1, 1), 0.5, 0.6, 0.1, 0x6a5040, 0.8, 2, 1);
     for (const p of G.players) if (!p.dead && !p.downed && !ai.hit.has(p) && H.dist2(p.x, p.z, e.x, e.z) < (e.r + p.r + 0.3) ** 2) { ai.hit.add(p); if (p.iframes > 0) { G.float(p.x, 2.2, p.z, 'DODGE', 'small good'); G.run.dodges++; } else G.hurtPlayer(p, dmgOf(e, e.def.dmg), "a Chain Brute's charge", { by: e, kx: dx, kz: dz, knock: 10 }); }
-    const b = G.room.bounds; let wall = e.x < b.minX + e.r + 0.2 || e.x > b.maxX - e.r - 0.2 || e.z < b.minZ + e.r + 0.2 || e.z > b.maxZ - e.r - 0.2;
+    let wall = !G.inRoom(e.x, e.z, e.r + 0.2);
     for (const p of G.room.pillars) if (H.dist2(e.x, e.z, p.x, p.z) < (p.r + e.r + 0.25) ** 2) wall = true;
     if (wall) { ai.state = 'recover'; ai.t = 0.2; e.vx = e.vz = 0; e.stunT = 2.4; e.brute_stunned = true; G.float(e.x, 3, e.z, 'STUNNED', 'big interrupt'); H.R.shake(0.4); H.audio.play('slam'); H.R.burst(e.x, 1, e.z, 0xffe45c, 25, 6, 0.6, 0.4); return; }
     if (ai.t > 0.75) { ai.state = 'recover'; ai.t = 0.6; e.vx = e.vz = 0; }

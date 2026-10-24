@@ -192,41 +192,83 @@ G.genMap = function (depth) {
 };
 
 /* ---------------- Room generation ---------------- */
+/* A room is a union of axis-aligned rectangles: the main hall (rects[0]) plus 0–2 annexes on its sides,
+   overlapping it by 2 m so the opening is wide and smooth. All edges sit on an even-metre lattice, so walls are
+   laid as 2×2 m blocks around the outline (render.js). bounds = the box around all of it. */
+G.ROOM = { scale: 1.5, overlap: 2 };
+G.inRect = (q, x, z, r) => x >= q.minX + r && x <= q.maxX - r && z >= q.minZ + r && z <= q.maxZ - r;
+G.inRoom = function (x, z, r = 0, room = G.room) { if (!room) return true; for (const q of room.rects || [room.bounds]) if (G.inRect(q, x, z, r)) return true; return false; };
+// nearest point inside the walkable area (keeping r from the walls)
+G.clampToRoom = function (x, z, r = 0, room = G.room) {
+  if (!room || G.inRoom(x, z, r, room)) return { x, z };
+  let best = null, bd = 1e9;
+  for (const q of room.rects || [room.bounds]) { const cx = H.clamp(x, q.minX + r, q.maxX - r), cz = H.clamp(z, q.minZ + r, q.maxZ - r), d = (cx - x) ** 2 + (cz - z) ** 2; if (d < bd) { bd = d; best = { x: cx, z: cz }; } }
+  return best;
+};
 G.makeRoomLayout = function (type, rng, opts = {}) {
   const big = type === 'warden' || type === 'arena';
-  const W = big ? (type === 'arena' ? 34 : 30) : Math.round(rng.range(22, 28) / 2) * 2;
-  const D = big ? (type === 'arena' ? 24 : 22) : Math.round(rng.range(16, 20) / 2) * 2;
-  const bounds = { minX: -W / 2, maxX: W / 2, minZ: -D / 2, maxZ: D / 2 };
-  const room = { type, bounds, pillars: [], pits: [], vents: [], doors: [], prop: null, W, D };
+  const peaceful = ['rest', 'shrine', 'treasure', 'mystery', 'merchant'].includes(type);
+  // main hall, 50% bigger than before (sizes are multiples of 4 so every edge lands on the even lattice)
+  const W = big ? (type === 'arena' ? 52 : 44) : rng.pick(peaceful ? [28, 32] : [32, 36, 40]);
+  const D = big ? (type === 'arena' ? 36 : 32) : rng.pick(peaceful ? [24] : [24, 28]);
+  const main = { minX: -W / 2, maxX: W / 2, minZ: -D / 2, maxZ: D / 2, kind: 'main' };
+  const rects = [main];
+  // annexes: no two rooms look alike (hall only, one side, or both sides; varied size and height)
+  const plan = big ? 'hall' : rng.pick(peaceful ? ['hall', 'hall', 'left', 'right'] : ['hall', 'left', 'right', 'twin', 'twin']);
+  for (const side of plan === 'twin' ? ['left', 'right'] : plan === 'hall' ? [] : [plan]) {
+    const aw = rng.pick([12, 14, 16]), ad = rng.pick([12, 14, 16, 18]), ov = G.ROOM.overlap;
+    // vertical placement: anywhere from poking out above the hall (like a side chapel) to its middle; always ≥ 8 m of opening
+    const opts2 = []; for (let z0 = main.minZ - 6; z0 <= main.maxZ - 10; z0 += 2) { const open = Math.min(main.maxZ - 4, z0 + ad) - Math.max(main.minZ, z0); if (open >= 8) opts2.push(z0); }
+    if (!opts2.length) continue; const z0 = rng.pick(opts2);
+    rects.push(side === 'left' ? { minX: main.minX - aw, maxX: main.minX + ov, minZ: z0, maxZ: z0 + ad, kind: 'annex', side } : { minX: main.maxX - ov, maxX: main.maxX + aw, minZ: z0, maxZ: z0 + ad, kind: 'annex', side });
+  }
+  const bounds = { minX: Math.min(...rects.map(q => q.minX)), maxX: Math.max(...rects.map(q => q.maxX)), minZ: Math.min(...rects.map(q => q.minZ)), maxZ: Math.max(...rects.map(q => q.maxZ)) };
+  const room = { type, bounds, rects, main, pillars: [], pits: [], vents: [], doors: [], prop: null, W, D, plan };
+  const inAny = (x, z, r) => G.inRoom(x, z, r, room);
   const free = (x, z, r) => {
-    if (x < bounds.minX + r + 1.5 || x > bounds.maxX - r - 1.5 || z < bounds.minZ + r + 2 || z > bounds.maxZ - r - 1.5) return false;
-    if (Math.abs(x) < 3 && z > bounds.maxZ - 5) return false; // entry
+    if (!inAny(x, z, r + 1.5)) return false;
+    if (Math.abs(x) < 3 && z > main.maxZ - 5) return false; // entry
     if (Math.abs(x) < 3.5 && Math.abs(z) < 3.5 && (opts.centerFree || ['rest', 'shrine', 'treasure', 'mystery', 'challenge', 'warden'].includes(type))) return false;
-    if (z < bounds.minZ + 4) return false; // keep doors clear
+    for (const q of rects) if (G.inRect(q, x, z, 0) && z < q.minZ + 4 && !(q.kind === 'annex' && x > main.minX && x < main.maxX)) return false; // keep the doors' wall clear
+    // keep the openings between hall and annexes walkable
+    for (const q of rects) if (q.kind === 'annex') { const ex = q.side === 'left' ? main.minX : main.maxX; if (Math.abs(x - ex) < r + 2.5 && z > Math.max(q.minZ, main.minZ) && z < Math.min(q.maxZ, main.maxZ)) return false; }
     for (const p of room.pillars) if (H.dist2(x, z, p.x, p.z) < (p.r + r + 3) ** 2) return false;
     for (const p of room.pits) if (H.dist2(x, z, p.x, p.z) < (p.r + r + 3) ** 2) return false;
     for (const v of room.vents) if (H.dist2(x, z, v.x, v.z) < (v.r + r + 2) ** 2) return false;
     return true;
   };
   const tries = (n, f) => { for (let k = 0; k < n * 20 && n > 0; k++) if (f()) n--; };
-  const peaceful = ['rest', 'shrine', 'treasure', 'mystery', 'merchant'].includes(type);
+  const inR = (q, m) => [rng.range(q.minX + m, q.maxX - m), rng.range(q.minZ + m, q.maxZ - m)];
   const depth = opts.depth || 1;
-  // symmetric pillar pairs
-  const nPil = type === 'warden' ? 4 : rng.int(3) + (peaceful ? 1 : 2);
-  tries(Math.ceil(nPil / 2), () => { const x = rng.range(3, W / 2 - 3), z = rng.range(bounds.minZ + 4, bounds.maxZ - 4), r = rng.range(0.8, 1.3); if (!free(x, z, r) || !free(-x, z, r)) return false; room.pillars.push({ x, z, r }, { x: -x, z, r }); return true; });
-  if (!peaceful && type !== 'warden' && rng() < (type === 'arena' ? 1 : 0.45)) {
-    tries(type === 'arena' ? 2 : 1, () => { const x = rng.range(bounds.minX + 5, bounds.maxX - 5), z = rng.range(bounds.minZ + 5, bounds.maxZ - 5), r = rng.range(1.6, 2.4); if (!free(x, z, r + 1)) return false; room.pits.push({ x, z, r }); return true; });
+  // columns: symmetric pairs in the hall, one or two in each annex
+  const nPil = type === 'warden' ? 4 : rng.int(3) + (peaceful ? 2 : 3);
+  tries(Math.ceil(nPil / 2), () => { const x = rng.range(4, W / 2 - 4), z = rng.range(main.minZ + 5, main.maxZ - 5), r = rng.range(0.8, 1.3); if (!free(x, z, r) || !free(-x, z, r)) return false; room.pillars.push({ x, z, r }, { x: -x, z, r }); return true; });
+  for (const q of rects) if (q.kind === 'annex') tries(1 + rng.int(2), () => { const [x, z] = inR(q, 3), r = rng.range(0.8, 1.2); if (!free(x, z, r)) return false; room.pillars.push({ x, z, r }); return true; });
+  if (!peaceful && type !== 'warden' && rng() < (type === 'arena' ? 1 : 0.55)) {
+    tries(type === 'arena' ? 2 : 1, () => { const [x, z] = inR(main, 6), r = rng.range(1.6, 2.4); if (!free(x, z, r + 1)) return false; room.pits.push({ x, z, r }); return true; });
+    for (const q of rects) if (q.kind === 'annex' && rng() < 0.3) tries(1, () => { const [x, z] = inR(q, 5), r = rng.range(1.4, 2); if (!free(x, z, r + 1)) return false; room.pits.push({ x, z, r }); return true; });
   }
-  if (!peaceful && (depth >= 2 || type === 'arena' || (depth === 1 && (opts.layer || 0) >= 3)) && type !== 'warden') {
-    const nv = type === 'arena' ? 4 : rng.int(depth >= 3 ? 4 : 3);
-    tries(nv, () => { const x = rng.range(bounds.minX + 3, bounds.maxX - 3), z = rng.range(bounds.minZ + 4, bounds.maxZ - 4); if (!free(x, z, 1.4)) return false; room.vents.push({ x, z, r: 1.4, period: rng.range(4.5, 6.5), t: rng.range(0, 4), state: 'idle' }); return true; });
+  // fire traps: spread over the hall and the annexes (fewer in the first chambers)
+  if (!peaceful && type !== 'warden') {
+    const early = depth === 1 && (opts.layer || 0) < 3 && type !== 'arena';
+    const nMain = type === 'arena' ? 6 : early ? 2 + rng.int(2) : 4 + rng.int(depth >= 3 ? 4 : 3);
+    const mk = q => { const [x, z] = inR(q, 3); if (!free(x, z, 1.4)) return false; room.vents.push({ x, z, r: 1.4, period: rng.range(4.5, 6.5), t: rng.range(0, 4), state: 'idle' }); return true; };
+    tries(nMain, () => mk(main));
+    for (const q of rects) if (q.kind === 'annex') tries(early ? 1 : 2 + rng.int(2), () => mk(q));
   }
   return room;
 };
+/* Exit doors on the north walls: up to two on the hall; a third (or, sometimes, the second) goes on an annex
+   that has a free north wall. */
 G.placeDoors = function (room, nodes) {
-  const n = nodes.length; const b = room.bounds;
-  const span = Math.min(room.W - 8, n * 7);
-  nodes.forEach((node, i) => { const x = n === 1 ? 0 : -span / 2 + span * i / (n - 1); room.doors.push({ x, z: b.minZ - 0.6, type: node.type, node, open: false }); });
+  const n = nodes.length, main = room.main || room.bounds, rng = G.run ? G.run.rng : Math.random;
+  const annex = (room.rects || []).filter(q => q.kind === 'annex' && q.maxX - q.minX >= 10);
+  const onAnnex = annex.length && (n >= 3 || (n === 2 && rng() < 0.35)) ? 1 : 0;
+  const nMain = n - onAnnex, W = main.maxX - main.minX, span = Math.min(W - 10, nMain * 9);
+  nodes.forEach((node, i) => {
+    if (i < nMain) { const x = nMain === 1 ? 0 : -span / 2 + span * i / (nMain - 1); room.doors.push({ x: Math.round(x / 2) * 2 + 1, z: main.minZ - 0.6, type: node.type, node, open: false }); }
+    else { const q = annex[0]; const xs = q.side === 'left' ? (q.minX + main.minX) / 2 : (q.maxX + main.maxX) / 2; room.doors.push({ x: Math.round((xs - 1) / 2) * 2 + 1, z: q.minZ - 0.6, type: node.type, node, open: false, annex: true }); }
+  });
 };
 
 G.enterNode = function (node) {
@@ -252,8 +294,8 @@ G.loadRoom = function (type, opts = {}) {
   G.room = room;
   H.R.buildChamber(room, H.DEPTHS[Math.min(3, depth)]);
   // place players at entry
-  G.players.forEach((p, i) => { p.x = (i - (G.players.length - 1) / 2) * 1.6; p.z = room.bounds.maxZ - 2; p.vx = p.vz = 0; p.kvx = p.kvz = 0; p.lungeT = 0; p.faceAng = 0; p.dashT = 0; p.secondWind = false; p.statuses = {}; p.slowT = 0; p.spinT = 0; p.lungeT = 0; p.lungeHit = null; if (p.charge) { p.charge = null; p.anim.chargeK = 0; H.R.chargeArrow(p, false); } });
-  H.R.follow.x = 0; H.R.follow.z = room.bounds.maxZ - 6; H.R.updateCamera(0, true);
+  G.players.forEach((p, i) => { p.x = (i - (G.players.length - 1) / 2) * 1.6; p.z = (room.main || room.bounds).maxZ - 2; p.vx = p.vz = 0; p.kvx = p.kvz = 0; p.lungeT = 0; p.faceAng = 0; p.dashT = 0; p.secondWind = false; p.statuses = {}; p.slowT = 0; p.spinT = 0; p.lungeT = 0; p.lungeHit = null; if (p.charge) { p.charge = null; p.anim.chargeK = 0; H.R.chargeArrow(p, false); } });
+  H.R.follow.x = 0; H.R.follow.z = (room.main || room.bounds).maxZ - 6; H.R.updateCamera(0, true);
   // encounters
   if (['combat', 'elite', 'warden'].includes(type)) G.setupEncounter(room, type);
   if (type === 'warden') { room.isBoss = true; }
@@ -300,11 +342,11 @@ G.spawnPoint = function (minDist = 7) {
   const b = G.room.bounds;
   for (let k = 0; k < 60; k++) {
     const x = H.rand(b.minX + 2, b.maxX - 2), z = H.rand(b.minZ + 2, b.maxZ - 2);
-    if (G.blocked(x, z, 1)) continue;
+    if (!G.inRoom(x, z, 2) || G.blocked(x, z, 1)) continue;
     if (G.players.some(p => !p.dead && H.dist2(x, z, p.x, p.z) < minDist * minDist)) continue;
     return { x, z };
   }
-  return { x: H.rand(b.minX + 2, b.maxX - 2), z: b.minZ + 3 };
+  const m = G.room.main || b; return { x: H.rand(m.minX + 2, m.maxX - 2), z: m.minZ + 3 };
 };
 G.blocked = function (x, z, r) {
   const room = G.room; if (!room) return false;
@@ -597,9 +639,9 @@ G.overObstacle = function (p) {
 };
 G.collide = function (ent) {
   const room = G.room; if (!room) return;
-  const b = room.bounds; const r = ent.r;
-  if (ent.x < b.minX + r) ent.x = b.minX + r; if (ent.x > b.maxX - r) ent.x = b.maxX - r;
-  if (ent.z < b.minZ + r) ent.z = b.minZ + r; if (ent.z > b.maxZ - r) ent.z = b.maxZ - r;
+  const r = ent.r;
+  // walls: stay inside the hall-and-annexes outline
+  { const c = G.clampToRoom(ent.x, ent.z, r, room); ent.x = c.x; ent.z = c.z; }
   if (ent.kind === 'player' && ent.dashT > 0) return;   // a dashing hero crosses columns and pits (the walls still stop it)
   for (const p of room.pillars) { const dx = ent.x - p.x, dz = ent.z - p.z, d = Math.hypot(dx, dz), m = p.r + r; if (d < m && d > 0.0001) { ent.x = p.x + dx / d * m; ent.z = p.z + dz / d * m; if (ent.onWall) ent.onWall(p); } }
   const knocked = ent.kind === 'enemy' && Math.hypot(ent.kvx, ent.kvz) > 5 && !ent.flying;
@@ -674,7 +716,7 @@ G.aimTarget = function (p, range) {
   let tx = p.aimPt.x, tz = p.aimPt.z;
   if (p.src !== 'kbm' && !p.hasAim) { tx = p.x + p.aimDX * Math.min(range, 6.5); tz = p.z + p.aimDZ * Math.min(range, 6.5); const e = G.pickTarget(p, p.aimDX, p.aimDZ, 0.5, range); if (e) { tx = e.x; tz = e.z; } }
   const d = Math.hypot(tx - p.x, tz - p.z); if (d > range) { tx = p.x + (tx - p.x) / d * range; tz = p.z + (tz - p.z) / d * range; }
-  const b = G.room.bounds; tx = H.clamp(tx, b.minX + 0.5, b.maxX - 0.5); tz = H.clamp(tz, b.minZ + 0.5, b.maxZ - 0.5);
+  { const c = G.clampToRoom(tx, tz, 0.5); tx = c.x; tz = c.z; }
   return { x: tx, z: tz };
 };
 const hitOpts = (p, def, st, extra) => Object.assign({ ignoreShield: !!def.ignoreShield, src: p, el: def.el, status: def.status, stacks: def.stacks || 1, spell: def.id, knock: def.knock || 0, interrupt: !!def.interrupt, stun: def.stun || 0, role: def.role }, extra || {});
@@ -1031,7 +1073,7 @@ G.updateProjs = function (dt) {
     }
     // bounds / pillars
     const b = G.room.bounds;
-    if (pr.x < b.minX - 1 || pr.x > b.maxX + 1 || pr.z < b.minZ - 1 || pr.z > b.maxZ + 1 || pr.traveled > pr.range) { pr.dead = true; continue; }
+    if (!G.inRoom(pr.x, pr.z, -1) || pr.traveled > pr.range) { pr.dead = true; continue; }
     let hitWall = false; for (const p of G.room.pillars) if (H.dist2(pr.x, pr.z, p.x, p.z) < (p.r + pr.r * 0.5) ** 2) hitWall = true;
     if (hitWall) { pr.dead = true; H.R.burst(pr.x, pr.y, pr.z, pr.team === 1 ? 0xff2e55 : pr.color, 8, 4, 0.3, 0.3); if (pr.orb) G.orbCollapse(pr); continue; }
     if (pr.team === 0) {
