@@ -553,6 +553,8 @@ UI.showSettings = function (fromPause) {
       h += `</table></div><div class="row" style="margin-top:10px"><button class="btn" id="st-reset">Reset to defaults</button></div>`;
     }
     if (tab === 'game') h += `<div class="setlist"><div class="set"><div class="lab">Replay the primer<small>The two-minute controls tutorial.</small></div><button class="btn" id="st-primer">Start primer</button></div><div class="set"><div class="lab">Reset all settings<small>Audio, video, accessibility and controls.</small></div><button class="btn" id="st-resetall">Reset settings</button></div></div>`;
+    // third-party art credits (required by their licences)
+    if (tab === 'game') h += `<div class="eyebrow" style="margin:16px 0 6px">${esc(H.t('Credits'))}</div><div class="tiny muted" style="line-height:1.5">${esc(H.t('Longsword'))}: "Paladin Longsword" — Efarys (sketchfab.com/Efarys), CC-BY-SA 4.0. ${esc(H.t('Modified: resized textures, thicker proportions.'))}</div>`;
     body.innerHTML = h;
     for (const d of defs[tab]) {
       const row = $(`.set[data-k="${d.key}"]`, body);

@@ -61,6 +61,7 @@ R.init = function (canvas) {
   R.applyQuality(); R.setCameraMode(H.settings.camera || 'iso'); R.resize();
   window.addEventListener('resize', R.resize);
   R.ready = true;
+  R.loadWeaponModels();
 };
 R.applyQuality = function () {
   const q = H.settings.quality;
@@ -1477,6 +1478,8 @@ R.buildWeapon = function (wpn) {
   // the plain sword family follows the Veteran's painted look: pale-blue blade, gold guard and pommel, brown leather grip
   if (wpn.weapon === 'sword') { steel.color.setHex([0xa8d4e4, 0xbde2ef, 0xd4eef7, 0xd4eef7][tier]); steel.metalness = 0.25; steel.roughness = 0.35; guardM.color.setHex(tier === 2 ? 0xf2c23a : 0xe6ad22); guardM.metalness = 0.2; gripM.color.setHex(0x6b3f22); }
   const outer = new THREE.Group(), inner = new THREE.Group(); outer.add(inner);
+  const glb = wpn.model && R.weaponGLB[wpn.model];
+  if (glb) { inner.add(glb.fit.clone(true)); inner.rotation.x = -1.25; outer.userData.inner = inner; outer.userData.bladeY0 = glb.cfg.bladeY0; outer.userData.bladeLen = glb.cfg.bladeLen; outer.userData.glb = wpn.model; return outer; }
   const mk = (geo, mat, y, x = 0, z = 0) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.castShadow = true; inner.add(o); return o; };
   const kind = wpn.weapon;
   if (kind === 'axe') {
@@ -1507,6 +1510,30 @@ R.buildWeapon = function (wpn) {
   // blade span along +Y of inner, read by the energy arcs (swordtrail.js)
   if (kind === 'axe') { outer.userData.bladeY0 = 0.3; outer.userData.bladeLen = 0.5; } else { outer.userData.bladeY0 = 0.1; outer.userData.bladeLen = kind === 'bastard' ? 1.15 : 0.86; }
   return outer;
+};
+/* Weapon .glb models. An item with model: '<key>' uses the file once it has loaded; until then (or if the
+   file is missing) it keeps its procedural mesh. fit puts the model in the same frame as the procedural blade
+   (+Y of `inner` from the grip to the tip, flat side facing ±Z), so every swing, the energy arcs and the hand
+   pose work unchanged: rotX turns the file's axis onto +Y, then scale and lift place the grip in the hand. */
+R.WEAPON_MODELS = {
+  // "Paladin Longsword" by Efarys (sketchfab.com/Efarys), CC-BY-SA-4.0 — textures resized to 512 px
+  longsword: { url: 'public/models/weapons/longsword.glb', rotX: -Math.PI / 2, scale: 0.68, thick: [2.1, 2.0], // stylised: 2.1× wider, 2× thicker than the realistic file
+     lift: 0.436, bladeY0: 0.1, bladeLen: 0.86, glow: { mat: 'None_001', color: 0x2f6474, k: 1.0 } }
+};
+R.weaponGLB = {};
+R.loadWeaponModels = function () {
+  const THREE = T3(); if (!THREE.GLTFLoader) return;
+  for (const [key, cfg] of Object.entries(R.WEAPON_MODELS)) {
+    new THREE.GLTFLoader().load(cfg.url, gltf => {
+      const fit = new THREE.Group(); fit.add(gltf.scene); fit.rotation.x = cfg.rotX || 0; const sc = cfg.scale || 1, th = cfg.thick || [1, 1]; fit.scale.set(sc * th[0], sc * th[1], sc); // file axes: X width, Y thickness, Z length fit.position.y = cfg.lift || 0;
+      fit.traverse(o => { if (!o.isMesh) return; o.castShadow = true; o.geometry.shared = true; const mt = o.material; mt.shared = true;
+        if (mt.isMeshStandardMaterial) R.metalize(mt, 0.9);
+        if (cfg.glow && mt.name === cfg.glow.mat) { mt.emissive = new THREE.Color(cfg.glow.color); mt.emissiveIntensity = cfg.glow.k; } });
+      R.weaponGLB[key] = { fit, cfg };
+      // heroes already dressed swap their procedural blade for the model
+      for (const p of (H.G && H.G.players) || []) if (p.model && p.equip && p.equip.weapon && H.ITEMS[p.equip.weapon] && H.ITEMS[p.equip.weapon].model === key) { p.model._dressKey = null; R.dressRogue(p.model, p.equip); }
+    }, undefined, () => console.warn('[weapons] ' + cfg.url + ' not loaded; keeping the procedural blade'));
+  }
 };
 R.makeSword = function (m, wpn) {
   const outer = R.buildWeapon(wpn);

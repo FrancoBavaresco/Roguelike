@@ -27,3 +27,11 @@ Three.js r128 se carga desde cdnjs; `GLTFLoader` y `SkeletonUtils` (r128) están
 | `js/ui.js` | Menús, HUD, inventario, tienda |
 | `js/main.js` | Bucle principal (paso fijo de 1/60 s) |
 | `js/i18n.js` | Textos en español |
+
+## Créditos de arte de terceros
+
+| Recurso | Archivo | Autor | Licencia |
+|---|---|---|---|
+| Espada larga | `public/models/weapons/longsword.glb` | "Paladin Longsword [Free Download]" por [Efarys](https://sketchfab.com/Efarys) — [fuente](https://sketchfab.com/3d-models/paladin-longsword-free-download-7baa85e6e5d74526b2dd461d15f2b4ea) | [CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/) |
+
+La espada está modificada (texturas reducidas a 512 px y empaquetadas en GLB; en el juego se ve 2× más ancha y gruesa). Por la licencia CC-BY-SA, el archivo modificado se comparte bajo la misma licencia y hay que mantener el crédito en cualquier lugar donde se publique el juego (también figura en Ajustes › Juego › Créditos).
