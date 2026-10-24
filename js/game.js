@@ -1836,10 +1836,10 @@ G.comboFinisher = function (p, def, st, fin) {
     if (!G.active || p.dead) return;
     const base = Math.atan2(p.aimDX, p.aimDZ), R0 = st.range * (f.rangeMul || 1), ang = f.angle * Math.PI / 360;
     p.anim.swing = 'slash'; p.anim.swingN++; p.anim.bigN = p.anim.swingN;   // the finisher's energy arc is the big one
-    // the finisher's floor sweep wears the energy-arc colours (turquoise rim, white core), a bit wider than the cut
-    const EC = H.R.trailCfg || { edge: 0x33d6b0, core: 0xeafff6 };
-    H.R.slashArc(p.x, p.z, base, ang, R0 * 0.55, R0 * 1.18, EC.edge, 0.32); H.R.slashArc(p.x, p.z, base, ang * 0.85, R0 * 0.7, R0 * 1.02, EC.core, 0.26, 0.14);
-    H.R.burst(p.x + p.aimDX * R0 * 0.6, 0.8, p.z + p.aimDZ * R0 * 0.6, 0xe8ecf2, 16 * G.fxMul(p), 6, 0.3, 0.4, { dir: [p.aimDX, p.aimDZ] });
+    // one floor sweep only, in the energy-arc colour (the old white sweep is gone), a bit wider than the cut
+    const EC = H.R.trailCfg || { edge: 0x33d6b0 };
+    H.R.slashArc(p.x, p.z, base, ang, R0 * 0.55, R0 * 1.18, EC.edge, 0.32);
+    H.R.burst(p.x + p.aimDX * R0 * 0.6, 0.8, p.z + p.aimDZ * R0 * 0.6, EC.edge, 16 * G.fxMul(p), 6, 0.3, 0.4, { dir: [p.aimDX, p.aimDZ] });
     H.R.shake(0.18); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.05);
     let hit = 0;
     for (const e of G.enemies) {
