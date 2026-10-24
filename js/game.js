@@ -336,6 +336,7 @@ G.spawnEnemy = function (type, x, z, affix, extra) {
   let hpMul = (1 + 0.5 * (depth - 1) + 0.04 * ((G.room && G.room.layer) || 0)) * (coop ? 1.7 : 1) * (1 + (run ? run.curse : 0) * 0.1);
   if (run && run.mode === 'arena') hpMul = (1 + 0.09 * run.wave) * (coop ? 1.5 : 1);
   if (G.room && G.room.bloodMul) hpMul *= G.room.bloodMul;
+  if (!def.boss && !(run && run.mode === 'tutorial')) hpMul *= G.ENEMY_HP_MUL;   // common foes and elites (bosses and the tutorial keep their own life)
   if (def.boss) hpMul = (coop ? 1.9 : 1);
   if (type === 'dummy' || type === 'turret') hpMul = 1;
   const elite = !!affix;
@@ -1568,6 +1569,8 @@ G.xpFor = e => {
 };
 /* XP per enemy killed (×base above). Was 1.5; lowered 30% so levelling takes longer. Bosses and room-clear XP unchanged. */
 G.ENEMY_XP_MUL = 1.05;
+/* Life of common foes and elites: ×3 (+200%), in the descent and the arena. Bosses and the tutorial are unchanged. */
+G.ENEMY_HP_MUL = 3;
 G.gainXP = function (n, src) {
   const run = G.run; if (!run || run.mode === 'tutorial' || !n) return;
   run.xp += n; run.xpTotal += n;
