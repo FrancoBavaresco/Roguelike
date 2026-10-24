@@ -267,11 +267,11 @@ H.SPELLS.sword_slash = { id: 'sword_slash', stam: 7, ups: { range: 0.3, dmg: 0.2
   // everyone in a 2 m line, then a short step forward. After the 3rd, a short pause. delay = when the blade cuts.
   // hold the button: after the tap's slash, keep holding to wind up a full-circle Charged Whirl
   hold: { start: 0.22, time: 0.55, dmgMul: 2.4, radius: 3.1, knock: 8, stamMul: 1.6, cd: 0.45 },
-  combo: { window: 0.6, recover: 0.6, finisher: { dmgMul: 1.8, angle: 180, rangeMul: 1.1, delay: 0.2, knock: 9 }, hits: [
+  combo: { window: 0.6, recover: 0.12, finisher: { dmgMul: 1.8, angle: 180, rangeMul: 1.1, delay: 0.2, knock: 9 }, hits: [
     { shape: 'sweep', swing: 'slash', arc: 'hot', big: true, angle: 180, rangeMul: 1.0, dmgMul: 1.0, knock: 6, delay: 0.05, gap: 0.14 },
     { shape: 'cone', swing: 'chop', arc: 'red', angle: 25, rangeMul: 0.75, dmgMul: 1.4, knock: 3, delay: 0.1, gap: 0.16 },
     { shape: 'line', swing: 'thrust', arc: 'hot', len: 2.0, width: 0.75, dmgMul: 1.8, knock: 5, delay: 0.11, step: 7 }] },
-  desc: s => `Three-hit combo: a horizontal slash across the whole front (${s.dmg}), a downward chop on what's straight ahead (${Math.round(s.dmg * 1.4)}), and a thrust that pierces every foe in a 2 m line (${Math.round(s.dmg * 1.8)}) and carries you a step forward; then a short pause. Slash during a dash, or right after it, for a rushing combo: two quick cuts (${Math.round(s.dmg * 1.4)}) and a horizontal slash that shoves and stuns weak foes (${Math.round(s.dmg * 1.4 * 1.3)}). Hold the button to wind up a Charged Whirl all around you: ${Math.round(s.dmg * 2.4)} damage.` };
+  desc: s => `Three-hit combo: a horizontal slash across the whole front (${s.dmg}), a downward chop on what's straight ahead (${Math.round(s.dmg * 1.4)}), and a thrust that pierces every foe in a 2 m line (${Math.round(s.dmg * 1.8)}) and carries you a step forward; you can start the next combo right away. Slash during a dash, or right after it, for a rushing combo: two quick cuts (${Math.round(s.dmg * 1.4)}) and a horizontal slash that shoves and stuns weak foes (${Math.round(s.dmg * 1.4 * 1.3)}). Hold the button to wind up a Charged Whirl all around you: ${Math.round(s.dmg * 2.4)} damage.` };
 H.SPELLS.sword_thrust = { id: 'sword_thrust', stam: 22, ups: { range: 0.6, dmg: 0.25 , cd: 0.12 }, weapon: 'sword', dtype: 'pierce', hero: 'knight', name: 'Thrust', el: 'stone', role: 'attack', kind: 'thrust', glyph: 'k_thrust', cd: 5, cost: 0, range: 3.6, dmg: 16, width: 0.7, status: 'bleed', stacks: 2, lunge: { min: 2.0, max: 6.6, tip: 1.2, speed: 25, fullSpeed: 32 }, chargeable: { time: 0.8, hold: 1.2, fullMul: 1.3 },
   desc: s => `Hold to wind up: the arrow on the floor shows exactly how far you will dash. Release to lunge along it, piercing every foe on the way for ${s.dmg} damage and Bleeding. Fully charged: faster and +30% damage.` };
 H.SPELLS.sword_cleave = { id: 'sword_cleave', stam: 30, ups: { range: 0.4, dmg: 0.25 , cd: 0.12 }, weapon: 'sword', dtype: 'slash', hero: 'knight', name: 'Mighty Blow', el: 'stone', role: 'attack', kind: 'cleave', glyph: 'k_cleave', cd: 10, cost: 0, range: 3.2, dmg: 32, angle: 90, knock: 7,
@@ -294,7 +294,7 @@ H.SPELLS.bastard_slash = { id: 'bastard_slash', stam: 12, ups: { range: 0.3, dmg
   // same combos as the steel sword, slower and with more reach
   quick: { angle: 45, rangeMul: 1.1 }, quickFinisher: { dmgMul: 1.3, angle: 180, rangeMul: 1.15, delay: 0.1, knock: 11, stunWeak: 1.2 },
   hold: { start: 0.22, time: 0.65, dmgMul: 2.4, radius: 3.8, knock: 9, stamMul: 1.6, cd: 0.55 },
-  combo: { window: 0.7, recover: 0.75, finisher: { dmgMul: 1.8, angle: 180, rangeMul: 1.1, delay: 0.24, knock: 11 }, hits: [
+  combo: { window: 0.7, recover: 0.16, finisher: { dmgMul: 1.8, angle: 180, rangeMul: 1.1, delay: 0.24, knock: 11 }, hits: [
     { shape: 'sweep', swing: 'slash', arc: 'hot', big: true, angle: 180, rangeMul: 1.0, dmgMul: 1.0, knock: 8, delay: 0.06, gap: 0.2 },
     { shape: 'cone', swing: 'chop', arc: 'red', angle: 25, rangeMul: 0.75, dmgMul: 1.4, knock: 4, delay: 0.12, gap: 0.22 },
     { shape: 'line', swing: 'thrust', arc: 'hot', len: 2.6, width: 0.85, dmgMul: 1.8, knock: 7, delay: 0.13, step: 8 }] },
@@ -385,8 +385,8 @@ H.BRANCH_LABEL = {
 };
 /* Veteran attribute cards (level-ups). Each level stacks; max = levels. */
 H.ATTRS = {
-  vigor: { name: 'Vigor', icon: 'attack', col: '#ffd77a', max: 4, per: 15, desc: n => `+15 max stamina (${100 + 15 * n} → ${100 + 15 * (n + 1)}).` },
-  second_breath: { name: 'Second Breath', icon: 'st_regen', col: '#e8c46a', max: 4, per: 0.2, desc: n => `Stamina refills ${Math.round(20)}% faster (+${Math.round(20 * n)}% → +${Math.round(20 * (n + 1))}%).` },
+  vigor: { stam: true, name: 'Vigor', icon: 'attack', col: '#ffd77a', max: 4, per: 15, desc: n => `+15 max stamina (${100 + 15 * n} → ${100 + 15 * (n + 1)}).` },
+  second_breath: { stam: true, name: 'Second Breath', icon: 'st_regen', col: '#e8c46a', max: 4, per: 0.2, desc: n => `Stamina refills ${Math.round(20)}% faster (+${Math.round(20 * n)}% → +${Math.round(20 * (n + 1))}%).` },
   thick_skin: { name: 'Thick Skin', icon: 'defense', col: '#dca16a', max: 4, per: 12, desc: n => `+12 max HP for the rest of the run.` },
   footwork: { name: 'Footwork', icon: 'movement', col: '#8fe8c4', max: 3, per: 0.05, desc: n => `+5% move speed (+${5 * n}% → +${5 * (n + 1)}%).` },
   battle_rhythm: { name: 'Battle Rhythm', icon: 'k_spin', col: '#5fb0ff', max: 3, per: 0.06, desc: n => `All your skills recharge 6% faster (−${6 * n}% → −${6 * (n + 1)}%).` }
@@ -468,7 +468,8 @@ for (const id in H.ITEMS) H.ITEMS[id].id = id;
    dashRecharge seconds to get one dash charge back · dashCharges: base charges
    camFollow    how fast the camera catches up with the hero (higher = less lag) */
 H.MOVE = { speed: 7.2, accelTime: 0.06, decelTime: 0.08, dashDist: 4.8, dashTime: 0.14, dashExit: 0.35, dashRecharge: 1.35, dashCharges: 2, camFollow: 9 };
-H.STAMINA = { max: 100, regen: 45, delay: 0.3, chargedMul: 1.6 };
+// enabled: false switches stamina off (no costs, no bar, no stamina rewards)
+H.STAMINA = { enabled: false, max: 100, regen: 45, delay: 0.3, chargedMul: 1.6 };
 H.ENEMY_DMG_MUL = 1.35;     // direct hits
 H.ENEMY_DOT_MUL = 1.15;     // burning ground, poison clouds…
 H.ENEMY_PROJ_SPEED = 1.35;  // hostile projectiles

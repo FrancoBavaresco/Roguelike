@@ -107,7 +107,7 @@ G.makePlayer = function (idx, seat) {
   if (p.boon === 'attuned' && p.spells[0]) p.spells[0].rank = 2;
   p.charId = (G.run && G.run.mode === 'tutorial') ? 'percy' : (seat.character || (idx === 0 ? (H.save.meta.character || 'percy') : 'percy'));
   { const hero = H.HEROES[p.charId] || H.HEROES.percy; const want = p.spells[0] && p.spells[0].id; p.basePrimary = hero.primaries.includes(want) ? want : hero.defaultPrimary; p.spells[0] = { id: p.basePrimary, rank: 1, cd: 0 }; }
-  p.useStam = p.charId === 'knight'; p.maxStam = H.STAMINA.max; p.stam = p.maxStam; p.stamT = 0;
+  p.useStam = p.charId === 'knight' && H.STAMINA.enabled !== false; p.maxStam = H.STAMINA.max; p.stam = p.maxStam; p.stamT = 0;
   // animation state written by the game; the view reads it (castN/swingN/twirlN are event counters)
   p.anim = { castN: 0, castSide: 1, swing: null, swingN: 0, twirlN: 0, chargeK: 0, el: null };
   H.views.create(p, { accent, cloak: idx === 0 ? 0x38323f : 0x1e3a40 });
@@ -1651,7 +1651,7 @@ G.makeVeteranOffers = function (owner, kind, count) {
   const atks = owner.spells.concat([owner.ult]).filter(s => s && H.SPELLS[s.id].hero && H.SPELLS[s.id].ups).map(s => s.id);
   const branches = id => { const d = H.SPELLS[id]; if (!d || !d.ups) return []; const u = owner.ups[id] || {}; return Object.keys(d.ups).filter(k => (u[k] || 0) < H.BRANCH_MAX).map(k => ({ type: 'branch', id, stat: k })); };
   const upg = atks.filter(id => branches(id).length);
-  const attrs = Object.keys(H.ATTRS).filter(k => ((owner.attrs || {})[k] || 0) < H.ATTRS[k].max);
+  const attrs = Object.keys(H.ATTRS).filter(k => !(H.ATTRS[k].stam && !owner.useStam) && ((owner.attrs || {})[k] || 0) < H.ATTRS[k].max);
   // the Aid blessing (Ultimate on R + Divine Bar) is offered until the hero takes it
   if (!owner.ult && H.SPELLS.aid_call && kind !== 'rank') push({ type: 'ult', id: 'aid_call' });
   // usually: two upgrades for one attack (A or B), plus one attribute
