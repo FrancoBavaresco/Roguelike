@@ -652,10 +652,10 @@ G.tryCast = function (p, i, quiet) {
     if (!(p.comboT > 0)) p.comboN = 0;
     p.comboN = (p.comboN || 0) + 1;
     if (p.comboN < 3) { s.cd = def.combo.gap; s.maxCd = s.cd; p.comboT = def.combo.window; }
-    else { s.cd = s.maxCd = def.combo.recover + def.combo.finisher.delay; p.comboN = 0; p.comboT = 0; G.comboFinisher(p, def, st); G.emit('cast', { p, slot: i, id: s.id }); return true; }
+    else { p.anim.windN = p.anim.swingN; s.cd = s.maxCd = def.combo.recover + def.combo.finisher.delay; p.comboN = 0; p.comboT = 0; G.comboFinisher(p, def, st); G.emit('cast', { p, slot: i, id: s.id }); return true; }
   }
   // the 3rd attack of the dash combo is a horizontal slash that shoves and stuns weak foes
-  if (quick && def.quickFinisher && p.quickN >= H.QUICK_ATTACK.max) { s.cd = s.maxCd = (def.combo ? def.combo.recover : 0.5) + def.quickFinisher.delay; G.comboFinisher(p, def, st, def.quickFinisher); G.emit('cast', { p, slot: i, id: s.id }); return true; }
+  if (quick && def.quickFinisher && p.quickN >= H.QUICK_ATTACK.max) { p.anim.windN = p.anim.swingN; s.cd = s.maxCd = (def.combo ? def.combo.recover : 0.5) + def.quickFinisher.delay; G.comboFinisher(p, def, st, def.quickFinisher); G.emit('cast', { p, slot: i, id: s.id }); return true; }
   G.quick = quick;
   G.md = md; G.SPELL[def.kind](p, def, st); G.md = {}; G.quick = false;
   if (p.lungeT > 0 && p.dashT > 0) { p.dashT = 0; p.dashExt = 0; p.dashTrail = null; p.dashFx = null; }   // a lunge takes over the dash's movement
@@ -1642,7 +1642,7 @@ G.makeVeteranOffers = function (owner, kind, count) {
   count += owner.boon === 'scholar' ? 1 : 0;
   const push = o => { const key = o.type + ':' + o.id + ':' + (o.stat || ''); if (used.has(key) || offers.length >= count) return false; used.add(key); offers.push(o); return true; };
   const atks = owner.spells.concat([owner.ult]).filter(s => s && H.SPELLS[s.id].hero && H.SPELLS[s.id].ups).map(s => s.id);
-  const branches = id => { const d = H.SPELLS[id]; const u = owner.ups[id] || {}; return Object.keys(d.ups).filter(k => (u[k] || 0) < H.BRANCH_MAX).map(k => ({ type: 'branch', id, stat: k })); };
+  const branches = id => { const d = H.SPELLS[id]; if (!d || !d.ups) return []; const u = owner.ups[id] || {}; return Object.keys(d.ups).filter(k => (u[k] || 0) < H.BRANCH_MAX).map(k => ({ type: 'branch', id, stat: k })); };
   const upg = atks.filter(id => branches(id).length);
   const attrs = Object.keys(H.ATTRS).filter(k => ((owner.attrs || {})[k] || 0) < H.ATTRS[k].max);
   // the Aid blessing (Ultimate on R + Divine Bar) is offered until the hero takes it
@@ -1669,7 +1669,7 @@ G.makeKitOffers = function (owner, kind, count, kit) {
   // weapon / fist attacks (hero spells with upgrade branches) level up like kit abilities
   const heroAtk = owner.spells.filter(s => s && H.SPELLS[s.id].hero && H.SPELLS[s.id].ups).map(s => s.id);
   const ownedItems = kit.spells.filter(id => have.has(id)).concat(heroAtk).concat(kit.passives.filter(id => owner.passives[id])).concat(owner.ult ? [owner.ult.id] : []);
-  const branchesOf = id => { const d = H.SPELLS[id] || H.PASSIVES[id]; const u = owner.ups[id] || {}; return Object.keys(d.ups).filter(k => (u[k] || 0) < H.BRANCH_MAX).map(k => ({ type: 'branch', id, stat: k })); };
+  const branchesOf = id => { const d = H.SPELLS[id] || H.PASSIVES[id]; if (!d || !d.ups) return []; const u = owner.ups[id] || {}; return Object.keys(d.ups).filter(k => (u[k] || 0) < H.BRANCH_MAX).map(k => ({ type: 'branch', id, stat: k })); };
   const upgradable = ownedItems.filter(id => branchesOf(id).length);
   const primKind = owner.spells[0] ? H.SPELLS[owner.spells[0].id].kind : 'projectile';
   const mods = Object.keys(H.MODS).filter(k => H.MODS[k].kinds.includes(primKind) && (owner.mods[k] || 0) < H.MODS[k].max);
