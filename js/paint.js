@@ -10,7 +10,7 @@
 (function () {
   const R = H.R;
   const P = R.paint = {};
-  let ready = false, rtLit, rtAlb, rtNrm, rtFx, rtShade, quadScene, shadeScene, quadCam, U, nrmMat, black;
+  let ready = false, rtLit, rtAlb, rtNrm, rtFx, rtShade, quadScene, shadeScene, quadCam, U, nrmMat, nrmSk, black, blackSk;
   const albCache = new WeakMap(), fxCache = new WeakMap();
   const solids = [], fx = [], fxVis = [];
 
@@ -20,7 +20,7 @@
     const THREE = window.THREE;
     const mkRT = depth => { const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }); if (depth) { rt.depthTexture = new THREE.DepthTexture(1, 1); rt.depthTexture.type = THREE.UnsignedIntType; } return rt; };
     rtLit = mkRT(true); rtAlb = mkRT(false); rtNrm = mkRT(false); rtFx = mkRT(false); rtShade = mkRT(false);
-    nrmMat = new THREE.MeshNormalMaterial(); black = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    nrmMat = new THREE.MeshNormalMaterial(); nrmSk = new THREE.MeshNormalMaterial({ skinning: true }); black = new THREE.MeshBasicMaterial({ color: 0x000000 }); blackSk = new THREE.MeshBasicMaterial({ color: 0x000000, skinning: true });
     quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     U = {
       tLit: { value: rtLit.texture }, tAlb: { value: rtAlb.texture }, tNrm: { value: rtNrm.texture }, tFx: { value: rtFx.texture }, tDepth: { value: rtLit.depthTexture }, tShade: { value: rtShade.texture },
@@ -115,7 +115,7 @@
     if (m.isMeshBasicMaterial) return m;
     let f = fxCache.get(m);
     if (f === undefined) { f = (m.emissive && (m.emissiveMap || m.emissive.getHex() > 0)) || (m.emissive && m.userData && m.userData.em != null) ? new THREE.MeshBasicMaterial({ map: m.emissiveMap || null, side: m.side, skinning: !!m.skinning }) : null; fxCache.set(m, f); }
-    if (!f) return black;
+    if (!f) return m.skinning ? blackSk : black;
     f.color.copy(m.emissive).multiplyScalar(m.emissiveIntensity != null ? m.emissiveIntensity : 1); return f;
   };
   const opaque = m => m && !m.transparent && m.blending === THREE.NormalBlending && !m.isShaderMaterial && !m.isPointsMaterial && !m.isSpriteMaterial;
@@ -152,7 +152,7 @@
     // 2 base colour: lights off
     swap(albOf); renderer.setRenderTarget(rtAlb); renderer.render(scene, cam); unswap();
     // 3 normals
-    scene.overrideMaterial = nrmMat; scene.background = null; renderer.setClearColor(0x8080ff, 1); renderer.setRenderTarget(rtNrm); renderer.render(scene, cam); scene.overrideMaterial = null;
+    swap(mt => (mt && mt.skinning ? nrmSk : nrmMat)); scene.background = null; renderer.setClearColor(0x8080ff, 1); renderer.setRenderTarget(rtNrm); renderer.render(scene, cam); unswap();   // per object, so animated (skinned) models bend in this pass too
     // 4 effects: glowing surfaces + sprites, particles, telegraphs, flames
     renderer.setClearColor(0x000000, 1); swap(fxOf); showFx(); renderer.setRenderTarget(rtFx); renderer.render(scene, cam); unswap();
     scene.background = bg; renderer.shadowMap.autoUpdate = auto;

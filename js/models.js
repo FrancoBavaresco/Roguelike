@@ -26,10 +26,15 @@
       sockets: { head: 'head', spine: 'spine' },
       anims: { idle: 'Idle', run: 'Run', windup: 'Crouch', attack: 'Pounce', hit: 'Hit', death: 'Death' } }
   };
+  /* The Veteran: "Theron" (rigged, 8 clips). The right arm (and the left on two-handed weapons) is driven by IK
+     toward the game's own swing path (render.js, R.heroArmIK), so the sword and the three combo hits stay
+     exactly as designed; the clips move the body, legs and the free arm. subclips: name → [clip, from s, to s]. */
   H.PLAYER_MODELS = {
-    knight: { url: 'public/models/characters/knight.glb', enabled: false, fallback: 'procedural', height: 1.9, rotY: 0, yOffset: 0, tint: null, pool: 1,
-      sockets: { hand_R: 'hand_R', hand_L: 'hand_L', head: 'head', spine: 'spine' },
-      anims: { idle: 'Idle', run: 'Run', cast: 'Cast', dash: 'Dash', hurt: 'Hit', death: 'Death' } }
+    knight: { url: 'public/models/characters/theron.glb', enabled: true, fallback: 'procedural', height: 1.9, rotY: Math.PI, yOffset: 0, tint: null, pool: 1,
+      sockets: { hand_R: 'hand_R', hand_L: 'hand_L', head: 'Head', spine: 'Spine' },
+      armIK: { R: ['RightUpperArm', 'RightLowerArm', 'RightHand'], L: ['LeftUpperArm', 'LeftLowerArm', 'LeftHand'] },
+      subclips: { combo1: ['Attack_Combo', 0.3, 0.68], combo2: ['Attack_Combo', 0.62, 0.98], combo3: ['Attack_Combo', 0.92, 1.4], slam: ['Special_Slam', 0.12, 1.25] },
+      anims: { idle: 'Combat_Idle', calm: 'Idle', run: 'Run', dash: 'Dash', hurt: 'Hit', cast: 'Ultimate', slash: 'combo1', chop: 'combo2', thrust: 'combo3', smash: 'slam' } }
   };
   H.BOSS_MODELS = {};
   const groups = () => [H.ENEMY_MODELS, H.PLAYER_MODELS, H.BOSS_MODELS];
@@ -51,7 +56,7 @@
       M.status[type] = 'loading';
       const fail = why => { M.status[type] = 'missing'; M.report[type] = { error: why }; console.warn('[models] ' + cfg.url + ' not used (' + why + '); keeping the procedural model.'); res(); };
       try {
-        loader.load(cfg.url, gltf => {
+        const onGltf = gltf => {
           try {
             const scene = gltf.scene; if (!scene) return fail('no scene');
             // mark geometry as shared so removing one instance never disposes the template
@@ -64,7 +69,9 @@
             if (!(h > 1e-4) || !isFinite(h)) return fail('empty bounding box');
             const scale = cfg.height ? cfg.height / h : (cfg.scale || 1);
             const fit = { scale, lift: -box.min.y * scale + (cfg.yOffset || 0), height: h * scale };
-            const clips = gltf.animations || [];
+            const clips = (gltf.animations || []).slice();
+            // sub-clips cut from longer clips (e.g. one hit of a combo)
+            for (const [name, [from, a, b]] of Object.entries(cfg.subclips || {})) { const src = THREE.AnimationClip.findByName(clips, from); if (src && THREE.AnimationUtils.subclip) clips.push(THREE.AnimationUtils.subclip(src, name, Math.round(a * 60), Math.round(b * 60), 60)); }
             const missing = Object.entries(cfg.anims || {}).filter(([, n]) => !THREE.AnimationClip.findByName(clips, n)).map(([k]) => k);
             const sockets = {}; for (const k of Object.keys(SOCKET_ALIASES)) { const n = findSocketName(scene, cfg, k); if (n) sockets[k] = n; }
             M.cache[type] = { scene, clips, fit, sockets };
@@ -72,7 +79,11 @@
             M.status[type] = 'ready';
             res();
           } catch (err) { fail(err && err.message || 'bad file'); }
-        }, undefined, err => fail(err && err.message || 'not found'));
+        };
+        // hosts that don't serve .glb files: the page can embed the model as base64 in H.EMBED[url]
+        const emb = H.EMBED && H.EMBED[cfg.url];
+        if (emb) { const bin = atob(emb), buf = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i); loader.parse(buf.buffer, '', onGltf, err => fail(err && err.message || 'bad embedded file')); }
+        else loader.load(cfg.url, onGltf, undefined, err => fail(err && err.message || 'not found'));
       } catch (err) { fail(err && err.message || 'loader error'); }
     }));
     return Promise.all(jobs).then(() => M.warm());
@@ -96,7 +107,7 @@
     if (c.clips.length) {
       const mixer = new THREE.AnimationMixer(obj); const actions = {};
       for (const [key, name] of Object.entries(cfg.anims || {})) { const clip = THREE.AnimationClip.findByName(c.clips, name); if (clip) actions[key] = mixer.clipAction(clip); }
-      for (const k of ['attack', 'hit', 'hurt', 'death', 'slash', 'thrust', 'cleave', 'smash', 'throw', 'backhand']) if (actions[k]) { actions[k].setLoop(THREE.LoopOnce); actions[k].clampWhenFinished = true; }
+      for (const k of ['attack', 'hit', 'hurt', 'death', 'slash', 'chop', 'thrust', 'cleave', 'smash', 'throw', 'backhand', 'cast', 'dash']) if (actions[k]) { actions[k].setLoop(THREE.LoopOnce); actions[k].clampWhenFinished = true; }
       anim = { mixer, actions, cur: null };
     }
     const sockets = {}; for (const [k, n] of Object.entries(c.sockets)) sockets[k] = obj.getObjectByName(n) || null;
@@ -149,12 +160,16 @@
   M.barHeight = type => { const c = M.cfg(type); return M.cache[type] && c && c.barH ? c.barH : null; };
 
   /* Cross-fade to a clip by key; one-shot clips restart. Unknown keys fall back to idle. */
-  M.play = function (anim, key, fade = 0.15) {
+  M.play = function (anim, key, fade = 0.15, restart = false, speed = 1) {
     if (!anim) return;
     if (!anim.actions[key]) key = anim.actions.idle ? 'idle' : null;
-    if (!key || anim.cur === key) return;
-    const next = anim.actions[key], prev = anim.cur && anim.actions[anim.cur];
-    next.reset().setEffectiveWeight(1).fadeIn(fade).play(); if (prev) prev.fadeOut(fade);
+    if (!key) return;
+    const next = anim.actions[key];
+    next.timeScale = speed;
+    if (anim.cur === key && !restart) return;
+    const prev = anim.cur && anim.actions[anim.cur];
+    if (prev && prev !== next) prev.fadeOut(fade);
+    next.reset().setEffectiveWeight(1).fadeIn(prev === next ? 0.04 : fade).play();
     anim.cur = key;
   };
 })();

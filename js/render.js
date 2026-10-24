@@ -1393,7 +1393,7 @@ R.makeKnight = function (accent) {
   body.scale.setScalar(1.04);
   R.ents.add(root);
   const m = { kind: 'knight', armoured: true, hideWithChest: [], look, rig: { torsoR: 0.34, shoulderX: 0.4, shoulderY: 1.5, waistY: 0.95 }, hideWithHelm: [], capeMat, cloakBase: 0x2c2826, root, body, cloak, cloakGeo, base, aL: null, aR: null, auraCol: accent, mantle, hood: null, head, legs, arms, strap: null, brooch, bGlow: null, hL, hR, gL, gR, book, sig, light, ward, bastion, mirror, accent, eyes: [], cloth: red, shield, flapF, flapB, castT: 0, castSide: 1, t: Math.random() * 10, walk: 0, lvx: 0, lvz: 0 };
-  if (H.models && H.models.has('knight')) { const inst = H.models.acquire('knight'); if (inst) { body.traverse(o => { if (o.isMesh && o !== hL && o !== hR) o.visible = false; }); body.add(inst.obj); m.glb = inst; m.glbInst = inst; m.anim = inst.anim; } }
+  R.attachHeroGLB(m);
   return m;
 };
 /* Character catalogue (looks only; every hero shares the same stats, controls and combat). */
@@ -1462,6 +1462,7 @@ R.dressRogue = function (m, equip) {
   if (m.kind === 'knight' && m.mantle) m.mantle.visible = false;
   if (m.shield) m.shield.visible = !m.twoHand;
   for (const g of m.gearObjs) R.toonify(g);
+  if (m.heroGLB) R.hideProcedural(m);
   if (m.capeMat) { m.capeMat.emissive = new THREE.Color(cloak && cloak.id === 'ember_mantle' ? 0x4a1004 : 0x000000); }
 };
 /* Steel sword: blade along +Y of `inner`; `outer` sits in the right hand and carries the sweep. */
@@ -1690,7 +1691,7 @@ R.animateRogue = function (m, p, dt) {
   const ph = m.walk, stride = Math.sin(ph) * mk;
   // attack / action pose (all additive, smoothed so nothing pops)
   const ct0 = m.castT || 0;
-  m.swingT = Math.max(0, (m.swingT || 0) - dt * (m.swingRate || { cleave: 2.6, smash: 2.2, throw: 3.2, backhand: 2.4, chop: 4.0 }[m.swing] || 3.6));
+  m.swingT = Math.max(0, (m.swingT || 0) - dt * R.swingRate(m));
   const sw = m.swingT > 0 ? m.swing : null, st = 1 - m.swingT, se = st * st * (3 - 2 * st), arc = Math.sin(Math.PI * st);
   const T = { yaw: 0, pitch: 0, dip: 0, roll: 0, l0: 0, l1: 0 };
   if (p.spinT > 0) { T.pitch = -0.08; T.dip = -0.06; T.l0 = 0.25; T.l1 = -0.25; }
@@ -1819,9 +1820,66 @@ R.animateRogue = function (m, p, dt) {
   m.cloth.emissive && m.cloth.emissive.setHex(hurt ? 0x661020 : 0x000000);
   m.root.visible = !(p.invulnBlink > 0 && Math.floor(m.t * 20) % 2 === 0);
   m.light.intensity = 1.0 + ct * 2;
-  if (m.anim && H.models) { const sw = m.swingT > 0 && m.swing && m.anim.actions[m.swing] ? m.swing : null; const clip = p.dead || p.downed ? 'death' : p.hurtT > 0 ? 'hurt' : p.dashT > 0 ? 'dash' : sw || (ct > 0.3 ? 'cast' : moving ? 'run' : 'idle'); H.models.play(m.anim, clip); m.anim.mixer.update(dt); }
+  if (!m.glb && m.kind === 'knight' && H.models && H.models.has('knight')) R.attachHeroGLB(m);   // the .glb finished loading after this hero was built
+  if (m.anim && H.models) R.animateHeroGLB(m, p, dt, moving, speed);
   // energy arc along the blade during the cutting phase of each swing (after the arm and sword are posed)
   if (R.trail) R.trail.update(m, p, dt);
+};
+/* ---- Hero .glb (the Veteran as Theron): the procedural rig keeps running unseen and still drives the sword hand;
+   the model plays its clips and its arm reaches for that hand with IK, so the swing paths stay the game's own. */
+R.SWING_RATE = { cleave: 2.6, smash: 2.2, throw: 3.2, backhand: 2.4, chop: 4.0 };
+R.swingRate = m => m.swingRate || R.SWING_RATE[m.swing] || 3.6;
+R.attachHeroGLB = function (m) {
+  if (m.glb || !H.models || !H.models.has('knight')) return;
+  const inst = H.models.acquire('knight'); if (!inst) return;
+  m.body.add(inst.obj); m.glb = inst; m.glbInst = inst; m.anim = inst.anim; m.heroGLB = true;
+  const cfg = H.models.cfg('knight') || {}, ik = cfg.armIK || {};
+  m.ik = {}; for (const side of ['R', 'L']) { const names = ik[side]; const bones = names && names.map(n => inst.obj.getObjectByName(n)); if (bones && bones.every(Boolean)) m.ik[side] = bones; }
+  m.gripR = inst.obj.getObjectByName('hand_R'); m.gripL = inst.obj.getObjectByName('hand_L');
+  R.hideProcedural(m);
+};
+// hide the procedural body (it keeps animating, unseen); the model and the held weapon stay
+R.hideProcedural = function (m) {
+  if (!m.heroGLB) return;
+  const keep = new Set(); m.glb.obj.traverse(o => keep.add(o)); for (const g of m.gearObjs || []) g.traverse(o => keep.add(o));
+  m.body.traverse(o => { if (o.isMesh && !keep.has(o) && o !== m.hL && o !== m.hR) o.visible = false; });
+  for (const s of [m.gL, m.gR]) if (s) s.visible = false;
+};
+R.animateHeroGLB = function (m, p, dt, moving, speed) {
+  const A = m.anim, P = H.models.play, dur = k => (A.actions[k] ? A.actions[k].getClip().duration : 1);
+  let clip, restart = false, rate = 1;
+  const sw = m.swingT > 0 && m.swing && A.actions[m.swing] ? m.swing : (m.twirlT > 0 && A.actions.slash ? 'slash' : null);
+  const swingKey = sw && (m.twirlT > 0 ? 'tw' + m._twirlN : 'sw' + m._swingN);
+  const dashing = p.dashT > 0; if (dashing && !m._glbDash) restart = true; m._glbDash = dashing;
+  if (p.dead || p.downed) clip = 'death';
+  else if (p.hurtT > 0) clip = 'hurt';
+  else if (dashing) { clip = 'dash'; rate = dur('dash') / 0.36; }
+  else if (sw) { clip = sw; if (swingKey !== m._glbSwing) { restart = true; m._glbSwing = swingKey; } rate = dur(sw) * (m.twirlT > 0 ? 1 / 0.26 : R.swingRate(m)); }
+  else if (p.callT > 0) { clip = 'cast'; if (!m._glbCall) restart = true; rate = dur('cast') / 3; }
+  else if (moving) { clip = 'run'; rate = H.clamp(speed / ((H.MOVE && H.MOVE.speed) || 7.2), 0.6, 1.5); }
+  else clip = H.G && H.G.enemies && H.G.enemies.some(e => !e.dead && e.spawnK >= 1) ? 'idle' : 'calm';
+  m._glbCall = p.callT > 0;
+  P(A, clip, 0.12, restart, rate); A.mixer.update(dt);
+  // arms: reach for the procedural hands (the sword hand always; the other one on two-handed weapons)
+  m.root.updateMatrixWorld(true);
+  if (m.sword) R.heroArmIK(m, 'R');
+  if (m.twoHand && !p.throwing) R.heroArmIK(m, 'L');
+};
+// two-bone IK in world space: rotate upper arm and forearm so the grip lands on the procedural hand
+R.heroArmIK = function (m, side) {
+  const bones = m.ik && m.ik[side]; if (!bones) return; const [up, low, hand] = bones, tgt = side === 'R' ? m.hR : m.hL, grip = side === 'R' ? m.gripR : m.gripL;
+  const THREE = T3(); const v = R._hik || (R._hik = { S: new THREE.Vector3(), E: new THREE.Vector3(), W: new THREE.Vector3(), T: new THREE.Vector3(), G: new THREE.Vector3(), d: new THREE.Vector3(), p: new THREE.Vector3(), e: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3(), q: new THREE.Quaternion(), bq: new THREE.Quaternion(), pq: new THREE.Quaternion() });
+  up.getWorldPosition(v.S); low.getWorldPosition(v.E); hand.getWorldPosition(v.W); tgt.getWorldPosition(v.T);
+  if (grip) { grip.getWorldPosition(v.G); v.T.sub(v.G.sub(v.W)); }   // aim the wrist so the grip (not the wrist) meets the hand
+  const a = v.S.distanceTo(v.E), b = v.E.distanceTo(v.W); if (a < 1e-4 || b < 1e-4) return;
+  v.d.subVectors(v.T, v.S); const dist = H.clamp(v.d.length(), 0.05, a + b - 0.002); v.d.normalize();
+  const s = side === 'R' ? 1 : -1; v.p.set(s * 0.9, -0.35, 0.55).transformDirection(m.body.matrixWorld); v.p.addScaledVector(v.d, -v.p.dot(v.d)); if (v.p.lengthSq() < 1e-6) v.p.set(0, -1, 0); v.p.normalize();
+  const x = (a * a - b * b + dist * dist) / (2 * dist), h = Math.sqrt(Math.max(0, a * a - x * x));
+  v.e.copy(v.S).addScaledVector(v.d, x).addScaledVector(v.p, h);
+  const turn = (bone, from, to) => { v.q.setFromUnitVectors(from.normalize(), to.normalize()); bone.getWorldQuaternion(v.bq); bone.parent.getWorldQuaternion(v.pq); v.bq.premultiply(v.q); bone.quaternion.copy(v.pq.invert().multiply(v.bq)); bone.updateMatrixWorld(true); };
+  turn(up, v.a.subVectors(v.E, v.S), v.b.subVectors(v.e, v.S));
+  low.getWorldPosition(v.E); hand.getWorldPosition(v.W); v.T.copy(v.d).multiplyScalar(dist).add(v.S);
+  turn(low, v.a.subVectors(v.W, v.E), v.b.subVectors(v.T, v.E));
 };
 /* Two-bone arm: shoulder (upper.position) → elbow → hand target, elbow pushed out and back. All in body space. */
 R.armIK = function (arm, target) {
