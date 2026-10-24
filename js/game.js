@@ -631,7 +631,6 @@ G.tryCast = function (p, i, quiet) {
   p.anim.castN++; p.anim.castSide = -p.anim.castSide; p.casting = def.role === 'attack' ? 0.12 : 0.05;
   const run = G.run; run.castsBySpell[s.id] = (run.castsBySpell[s.id] || 0) + 1;
   const kitSfx = { cinder_bolt: 'fire_bolt', flamethrower: 'flamethrower', meteor: 'meteor_fall', pyre_supernova: 'nova_charge', firestorm: null, fist_strike: null }[def.id];
-  if (def.weapon) { p.anim.castSide = 1; p.anim.swing = def.swing || def.kind; p.anim.swingN++; }
   if (kitSfx) H.audio.play(kitSfx, { pan: p.aimDX }); else if (kitSfx !== null && !def.weapon) H.audio.play('cast_' + def.el);
   // casting or attacking mid-dash: allowed, but the hero is no longer immune for the rest of the dash
   if (p.dashT > 0 && p.dashImmune) { p.dashImmune = false; p.iframes = 0; }
@@ -652,10 +651,12 @@ G.tryCast = function (p, i, quiet) {
     if (!(p.comboT > 0)) p.comboN = 0;
     p.comboN = (p.comboN || 0) + 1;
     if (p.comboN < 3) { s.cd = def.combo.gap; s.maxCd = s.cd; p.comboT = def.combo.window; }
-    else { p.anim.windN = p.anim.swingN; s.cd = s.maxCd = def.combo.recover + def.combo.finisher.delay; p.comboN = 0; p.comboT = 0; G.comboFinisher(p, def, st); G.emit('cast', { p, slot: i, id: s.id }); return true; }
+    else { s.cd = s.maxCd = def.combo.recover + def.combo.finisher.delay; p.comboN = 0; p.comboT = 0; G.comboFinisher(p, def, st); G.emit('cast', { p, slot: i, id: s.id }); return true; }
   }
   // the 3rd attack of the dash combo is a horizontal slash that shoves and stuns weak foes
-  if (quick && def.quickFinisher && p.quickN >= H.QUICK_ATTACK.max) { p.anim.windN = p.anim.swingN; s.cd = s.maxCd = (def.combo ? def.combo.recover : 0.5) + def.quickFinisher.delay; G.comboFinisher(p, def, st, def.quickFinisher); G.emit('cast', { p, slot: i, id: s.id }); return true; }
+  if (quick && def.quickFinisher && p.quickN >= H.QUICK_ATTACK.max) { s.cd = s.maxCd = (def.combo ? def.combo.recover : 0.5) + def.quickFinisher.delay; G.comboFinisher(p, def, st, def.quickFinisher); G.emit('cast', { p, slot: i, id: s.id }); return true; }
+  // the swing animation starts here; a combo finisher plays only its own swing, at the moment it cuts
+  if (def.weapon) { p.anim.castSide = 1; p.anim.swing = def.swing || def.kind; p.anim.swingN++; }
   G.quick = quick;
   G.md = md; G.SPELL[def.kind](p, def, st); G.md = {}; G.quick = false;
   if (p.lungeT > 0 && p.dashT > 0) { p.dashT = 0; p.dashExt = 0; p.dashTrail = null; p.dashFx = null; }   // a lunge takes over the dash's movement
@@ -1834,8 +1835,10 @@ G.comboFinisher = function (p, def, st, fin) {
   G.after(() => {
     if (!G.active || p.dead) return;
     const base = Math.atan2(p.aimDX, p.aimDZ), R0 = st.range * (f.rangeMul || 1), ang = f.angle * Math.PI / 360;
-    p.anim.swing = 'slash'; p.anim.swingN++;
-    H.R.slashArc(p.x, p.z, base, ang, 0.4, R0, 0xf6ecd4, 0.3); H.R.slashArc(p.x, p.z, base, ang * 0.7, 0.4, R0 * 0.8, 0xcfd8e6, 0.24, 0.14);
+    p.anim.swing = 'slash'; p.anim.swingN++; p.anim.bigN = p.anim.swingN;   // the finisher's energy arc is the big one
+    // the finisher's floor sweep wears the energy-arc colours (turquoise rim, white core), a bit wider than the cut
+    const EC = H.R.trailCfg || { edge: 0x33d6b0, core: 0xeafff6 };
+    H.R.slashArc(p.x, p.z, base, ang, R0 * 0.55, R0 * 1.18, EC.edge, 0.32); H.R.slashArc(p.x, p.z, base, ang * 0.85, R0 * 0.7, R0 * 1.02, EC.core, 0.26, 0.14);
     H.R.burst(p.x + p.aimDX * R0 * 0.6, 0.8, p.z + p.aimDZ * R0 * 0.6, 0xe8ecf2, 16 * G.fxMul(p), 6, 0.3, 0.4, { dir: [p.aimDX, p.aimDZ] });
     H.R.shake(0.18); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.05);
     let hit = 0;

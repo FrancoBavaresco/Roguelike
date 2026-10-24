@@ -26,6 +26,8 @@
     widthMin: 0.1,       // thickness at both ends of a stroke (1 = full blade band); the middle is full
     // fraction of the swing (0 = start, 1 = end) when the blade is actually cutting
     phases: { slash: [0.04, 0.8], cleave: [0.3, 0.56], smash: [0.48, 0.7], backhand: [0.42, 0.72] },
+    // the combo finisher's arc: longer reach past the tip, wider band, a little longer life
+    big: { tipExtend: 1.32, baseFrac: 0.16, life: 0.24, boost: 1.7 },
     twirl: true,         // the Charged Whirl leaves a full-circle arc
     // colour per weapon item (optional): legendary blades glow their own colour
     items: { oathbreaker: { core: 0xfff1d8, edge: 0xff8a2a } }
@@ -73,7 +75,7 @@
   // which stroke is cutting right now (null when the blade is winding up, recovering or at rest)
   function activeStroke(m, p) {
     if (m.twirlT > 0 && CFG.twirl) return 'tw' + m._twirlN;
-    if (!(m.swingT > 0) || !m.swing || m.swingWind) return null;   // a wind-up swing leaves no arc: its cut is the next swing
+    if (!(m.swingT > 0) || !m.swing) return null;
     const ph = CFG.phases[m.swing]; if (!ph) return null;
     const st = 1 - m.swingT;
     return st >= ph[0] && st <= ph[1] ? 'sw' + m._swingN : null;
@@ -89,16 +91,16 @@
       const T = m.trail, life = CFG.life;
       // the frame follows the hero's facing only (m.vf), so arcs turn with him but not with the swing twist
       T.frame.rotation.y = m.vf || 0;
-      for (const s of T.s) s.age += dt;
-      while (T.s.length && T.s[0].age >= life) T.s.shift();
+      { let j = 0; for (const s of T.s) { s.age += dt; if (s.age < s.life) T.s[j++] = s; } T.s.length = j; }
       if (key) {
-        if (key !== T.key) { T.key = key; T.stroke = (T.stroke || 0) + 1; const it = p.equip && p.equip.weapon; const c = (it && CFG.items[it]) || CFG; T.c0.setHex(c.core); T.c1.setHex(c.edge); }
+        if (key !== T.key) { T.key = key; T.stroke = (T.stroke || 0) + 1; const it = p.equip && p.equip.weapon; const c = (it && CFG.items[it]) || CFG; T.c0.setHex(c.core); T.c1.setHex(c.edge); T.big = key[0] === 's' && !!m.swingBig; }
         // blade base and tip in world space, after this frame's pose
         const inner = sw.userData.inner, L = sw.userData.bladeLen || 0.86, y0 = sw.userData.bladeY0 || 0.1;
         m.root.updateMatrixWorld(true);
-        T.b.set(0, y0 + L * CFG.baseFrac, 0); inner.localToWorld(T.b); T.frame.worldToLocal(T.b);
-        T.t.set(0, (y0 + L + 0.16) * CFG.tipExtend, 0); inner.localToWorld(T.t); T.frame.worldToLocal(T.t);
-        T.s.push({ id: T.stroke, age: 0, bx: T.b.x, by: T.b.y, bz: T.b.z, tx: T.t.x, ty: T.t.y, tz: T.t.z, r0: T.c0.r, g0: T.c0.g, b0: T.c0.b, r1: T.c1.r, g1: T.c1.g, b1: T.c1.b });
+        const B = T.big ? CFG.big : CFG;
+        T.b.set(0, y0 + L * B.baseFrac, 0); inner.localToWorld(T.b); T.frame.worldToLocal(T.b);
+        T.t.set(0, (y0 + L + 0.16) * B.tipExtend, 0); inner.localToWorld(T.t); T.frame.worldToLocal(T.t);
+        T.s.push({ id: T.stroke, age: 0, life: B.life || life, k: B.boost || 1, bx: T.b.x, by: T.b.y, bz: T.b.z, tx: T.t.x, ty: T.t.y, tz: T.t.z, r0: T.c0.r, g0: T.c0.g, b0: T.c0.b, r1: T.c1.r, g1: T.c1.g, b1: T.c1.b });
         if (T.s.length > CFG.maxSamples) T.s.shift();
       }
       R.trail.build(T);
@@ -113,10 +115,10 @@
         const s = S[i];
         // position inside its stroke → thin at both ends, full in the middle (a crescent)
         let a = i, b = i; while (a > 0 && S[a - 1].id === s.id) a--; while (b < n - 1 && S[b + 1].id === s.id) b++;
-        const u = b > a ? (i - a) / (b - a) : 0.5, fade = 1 - s.age / CFG.life;
+        const u = b > a ? (i - a) / (b - a) : 0.5, fade = 1 - s.age / s.life;
         const w = (CFG.widthMin + (1 - CFG.widthMin) * Math.pow(Math.sin(Math.PI * u), 0.8)) * (0.55 + 0.45 * fade);
         const ix = s.tx + (s.bx - s.tx) * w, iy = s.ty + (s.by - s.ty) * w, iz = s.tz + (s.bz - s.tz) * w;
-        const al = Math.pow(fade, 1.4) * (0.45 + 0.55 * Math.sin(Math.PI * Math.min(1, u * 1.15 + 0.08)));
+        const al = s.k * Math.pow(fade, 1.4) * (0.45 + 0.55 * Math.sin(Math.PI * Math.min(1, u * 1.15 + 0.08)));
         pos[k * 3] = ix; pos[k * 3 + 1] = iy; pos[k * 3 + 2] = iz; aA[k] = al; aV[k] = 0;
         pos[k * 3 + 3] = s.tx; pos[k * 3 + 4] = s.ty; pos[k * 3 + 5] = s.tz; aA[k + 1] = al; aV[k + 1] = 1;
         for (const o of [k, k + 1]) { cc[o * 3] = s.r0; cc[o * 3 + 1] = s.g0; cc[o * 3 + 2] = s.b0; ce[o * 3] = s.r1; ce[o * 3 + 1] = s.g1; ce[o * 3 + 2] = s.b1; }

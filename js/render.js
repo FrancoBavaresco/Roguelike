@@ -1517,7 +1517,7 @@ R.readHeroAnim = function (m, p) {
   if (m._castN === undefined) { m._castN = A.castN; m._swingN = A.swingN; m._twirlN = A.twirlN; m._el = A.el; } // a fresh model starts in sync, without replaying old events
   if (A.castN !== m._castN) { m._castN = A.castN; m.castT = 1; }
   m.castSide = A.castSide;
-  if (A.swingN !== m._swingN) { m._swingN = A.swingN; m.swing = A.swing; m.swingT = 1; m.swingWind = A.windN === A.swingN; } // swingWind: a wind-up swing, the real cut comes next
+  if (A.swingN !== m._swingN) { m._swingN = A.swingN; m.swing = A.swing; m.swingT = 1; m.swingBig = A.bigN === A.swingN; } // swingBig: a combo finisher (bigger energy arc)
   if (A.twirlN !== m._twirlN) { m._twirlN = A.twirlN; m.twirlT = 0.26; m.swingT = 0; }
   m.chargeK = A.chargeK;
   if (A.el !== m._el) { m._el = A.el; if (A.el) R.setRogueElement(m, A.el); }
