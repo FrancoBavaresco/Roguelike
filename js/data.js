@@ -286,8 +286,12 @@ H.SPELLS.axe_backhand = { id: 'axe_backhand', stam: 36, ups: { range: 0.35, dmg:
 H.SPELLS.axe_throw = { id: 'axe_throw', stam: 40, ups: { dmg: 0.25, bounce: 1 }, weapon: 'axe', dtype: 'slash', ignoreShield: true, hero: 'knight', name: 'Axe Throw', el: 'stone', role: 'attack', kind: 'axethrow', glyph: 'k_axethrow', ult: true, cd: 16, cost: 0, range: 14, dmg: 48, bounces: 2, hopRange: 9, swing: 'throw', sfx: 'axe',
   desc: s => `ULTIMATE. Hurl the axe at a foe: ${s.dmg} damage, then it bounces to ${s.bounces} more enemies and flies back to your hands.` };
 /* ---- Bastard Sword: the steel sword's moves with 1.7× reach; every blow leaves Bleeding ---- */
-H.SPELLS.bastard_slash = { id: 'bastard_slash', stam: 12, ups: { range: 0.3, dmg: 0.2 }, weapon: 'bastard', dtype: 'slash', hero: 'knight', name: 'Bastard Slash', el: 'stone', role: 'attack', kind: 'melee', glyph: 'k_slash', cd: 0.65, cost: 0, range: 3.4, dmg: 16, angle: 110, knock: 2.5, swing: 'slash', sfx: 'sword', status: 'bleed', stacks: 1, charge: { window: 0.35, dmgMul: 1.8, radius: 3.6, knock: 7 },
-  desc: s => `A slow, heavy slash: ${s.dmg} damage and Bleeding. Slash out of a dash for a rushing whirl: ${Math.round(s.dmg * 1.8)} damage all around you.` };
+H.SPELLS.bastard_slash = { id: 'bastard_slash', stam: 12, ups: { range: 0.3, dmg: 0.2 }, weapon: 'bastard', dtype: 'slash', hero: 'knight', name: 'Bastard Slash', el: 'stone', role: 'attack', kind: 'melee', glyph: 'k_slash', cd: 0.65, cost: 0, range: 3.4, dmg: 16, angle: 110, knock: 2.5, swing: 'slash', sfx: 'sword', status: 'bleed', stacks: 1, chargeOff: { window: 0.35, dmgMul: 1.8, radius: 3.6, knock: 7 },
+  // same combos as the steel sword, slower and with more reach
+  quick: { angle: 45, rangeMul: 1.1 }, quickFinisher: { dmgMul: 1.3, angle: 180, rangeMul: 1.15, delay: 0.1, knock: 11, stunWeak: 1.2 },
+  hold: { start: 0.22, time: 0.65, dmgMul: 2.4, radius: 3.8, knock: 9, stamMul: 1.6, cd: 0.55 },
+  combo: { gap: 0.16, window: 0.7, recover: 0.75, finisher: { dmgMul: 1.8, angle: 180, rangeMul: 1.1, delay: 0.24, knock: 11 } },
+  desc: s => `A slow, heavy slash: ${s.dmg} damage and Bleeding. Combo: two slashes, then a heavier horizontal slash that shoves foes back (${Math.round(s.dmg * 1.8)}); then a short pause. Attack out of a dash for a rushing combo: two quick cuts and a horizontal slash that shoves and stuns weak foes. Hold the button for a Charged Whirl: ${Math.round(s.dmg * 2.4)} damage all around you.` };
 for (const [src, id, name] of [['sword_thrust', 'bastard_thrust', 'Long Thrust'], ['sword_cleave', 'bastard_cleave', 'Great Cut'], ['sword_spin', 'bastard_spin', 'Great Whirl']]) {
   const b = H.SPELLS[src], R = 1.7;
   H.SPELLS[id] = Object.assign({}, b, { id, name, weapon: 'bastard', range: +(b.range * R).toFixed(2), stam: Math.round(b.stam * 1.1), status: 'bleed', stacks: b.stacks || 1, ups: Object.assign({}, b.ups) });
