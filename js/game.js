@@ -650,8 +650,10 @@ G.tryCast = function (p, i, quiet) {
   if (cb) {
     if (!(p.comboT > 0)) p.comboN = 0;
     p.comboN = (p.comboN || 0) + 1;
-    if (p.comboN < 3) { s.cd = def.combo.gap; s.maxCd = s.cd; p.comboT = def.combo.window; }
-    else { s.cd = s.maxCd = def.combo.recover + def.combo.finisher.delay; p.comboN = 0; p.comboT = 0; G.comboFinisher(p, def, st); G.emit('cast', { p, slot: i, id: s.id }); return true; }
+    const hits = def.combo.hits, n = p.comboN, hd = hits[n - 1];
+    if (n < hits.length) { s.cd = s.maxCd = hd.gap; p.comboT = def.combo.window; }
+    else { s.cd = s.maxCd = def.combo.recover + hd.delay; p.comboN = 0; p.comboT = 0; }
+    G.comboHit(p, def, st, hd); G.emit('cast', { p, slot: i, id: s.id }); return true;
   }
   // the 3rd attack of the dash combo is a horizontal slash that shoves and stuns weak foes
   if (quick && def.quickFinisher && p.quickN >= H.QUICK_ATTACK.max) { s.cd = s.maxCd = (def.combo ? def.combo.recover : 0.5) + def.quickFinisher.delay; G.comboFinisher(p, def, st, def.quickFinisher); G.emit('cast', { p, slot: i, id: s.id }); return true; }
@@ -1826,6 +1828,43 @@ G.divineCall = function (p, greater) {
   for (let k = 1; k <= def.gPulses; k++) G.after(() => { if (!G.active || p.dead) return; blast(p.x, p.z, def.gRadius * (0.7 + 0.3 * k / def.gPulses), def.gDmg, 6); H.R.shake(0.3); H.audio.play('slam'); }, gap * k);
   G.after(() => { if (!G.active || p.dead) return; blast(p.x, p.z, def.gRadius * 1.15, def.gFinal, 16); H.R.shake(1); H.R.kickCam(0, 1, 0.5); G.hitstop = Math.max(G.hitstop, 0.12); H.audio.play('nova_boom'); }, gap * (def.gPulses + 1));
   G.emit('cast', { p, slot: 4, id: def.id });
+};
+/* One hit of the sword's ground combo (def.combo.hits): the swing starts now, the blade lands after hd.delay.
+   sweep = arc in front (hd.angle) · cone = narrow arc, shorter reach · line = a thrust that pierces every foe
+   in a hd.len × hd.width strip, then a short step forward. */
+G.comboHit = function (p, def, st, hd) {
+  const dmg = Math.round(st.dmg * hd.dmgMul);
+  p.anim.castSide = 1; p.anim.swing = hd.swing; p.anim.swingN++; p.anim.arcN = p.anim.swingN; p.anim.arc = hd.arc; if (hd.big) p.anim.bigN = p.anim.swingN;
+  p.casting = Math.max(p.casting, hd.delay + 0.08); p.aimHoldT = Math.max(p.aimHoldT || 0, hd.delay + 0.3);
+  H.audio.play(hd.shape === 'line' ? 'sword_thrust' : 'sword_swish');
+  const ax = p.aimDX, az = p.aimDZ;
+  G.after(() => {
+    if (!G.active || p.dead) return;
+    const base = Math.atan2(ax, az); let hit = 0;
+    if (hd.shape === 'line') {
+      const len = hd.len + Math.max(0, st.range - def.range) * 0.5, hw = hd.width / 2, x0 = p.x + ax * 0.3, z0 = p.z + az * 0.3;
+      for (const e of G.enemies) {
+        if (e.dead || e.spawnK < 1) continue; const dx = e.x - x0, dz = e.z - z0, along = dx * ax + dz * az, side = Math.abs(dx * az - dz * ax);
+        if (along < -e.r || along > len + e.r || side > hw + e.r) continue;
+        G.damage(e, dmg, hitOpts(p, def, st, { kx: ax, kz: az, knock: hd.knock, phys: true, pierce: true, interrupt: true })); hit++;
+      }
+      if (H.R.trail && H.R.trail.streak) H.R.trail.streak(x0, z0, ax, az, len + 0.3, hd.arc);
+      // carried forward by the thrust: a short, easing step (decays with the hero's knockback velocity)
+      G.after(() => { if (!G.active || p.dead || p.dashT > 0) return; p.kvx = (p.kvx || 0) + ax * hd.step; p.kvz = (p.kvz || 0) + az * hd.step; }, 60);
+      H.R.shake(0.16); H.R.kickCam(ax, az, 0.18);
+    } else {
+      const R0 = st.range * (hd.rangeMul || 1), ang = hd.angle * Math.PI / 360;
+      for (const e of G.enemies) {
+        if (e.dead || e.spawnK < 1) continue; const dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz);
+        if (d > R0 + e.r || Math.abs(H.angDiff(Math.atan2(dx, dz), base)) > ang + Math.atan2(e.r, Math.max(d, 0.1)) * (hd.angle < 60 ? 0.5 : 1)) continue;
+        const [kx, kz] = H.norm(dx, dz); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: hd.knock, phys: true, cone: true, interrupt: hd.shape === 'cone' })); hit++;
+      }
+      if (hd.shape === 'sweep') { const AC = (H.R.trailCfg && H.R.trailCfg.styles && H.R.trailCfg.styles[hd.arc]) || { edge: 0xff2a3a }; H.R.slashArc(p.x, p.z, base, ang, R0 * 0.55, R0 * 1.1, AC.edge, 0.28); }
+      else H.R.burst(p.x + ax * R0 * 0.8, 0.3, p.z + az * R0 * 0.8, 0xff4a4a, 14 * G.fxMul(p), 5, 0.3, 0.35, { up: 4 });
+      H.R.shake(hd.shape === 'cone' ? 0.22 : 0.16);
+    }
+    if (hit) { H.audio.play('sword_hit', { heavy: hd.shape !== 'sweep' }); G.hitstop = Math.max(G.hitstop, hd.shape === 'sweep' ? 0.04 : 0.06); }
+  }, hd.delay * 1000);
 };
 /* Third hit of the sword combo: a short wind-up, then a heavy cut straight ahead in a 45° wedge (nothing at the sides or behind). */
 G.comboFinisher = function (p, def, st, fin) {

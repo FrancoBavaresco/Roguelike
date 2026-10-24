@@ -25,7 +25,10 @@
     tipExtend: 1.08,     // …to a little past the tip
     widthMin: 0.1,       // thickness at both ends of a stroke (1 = full blade band); the middle is full
     // fraction of the swing (0 = start, 1 = end) when the blade is actually cutting
-    phases: { slash: [0.04, 0.8], cleave: [0.3, 0.56], smash: [0.48, 0.7], backhand: [0.42, 0.72] },
+    phases: { slash: [0.04, 0.8], chop: [0.33, 0.64], cleave: [0.3, 0.56], smash: [0.48, 0.7], backhand: [0.42, 0.72] },
+    // colour styles the combat code can ask for per swing (p.anim.arc): core = cutting edge, edge = the body of the arc
+    styles: { hot: { core: 0xffffff, edge: 0xff1e34 }, red: { core: 0xff8a7a, edge: 0xd4142c } },
+    streak: { life: 0.22, width: 0.55 },   // the thrust's straight streak
     // the combo finisher's arc: longer reach past the tip, wider band, a little longer life
     big: { tipExtend: 1.32, baseFrac: 0.16, life: 0.24, boost: 1.7 },
     twirl: true,         // the Charged Whirl leaves a full-circle arc
@@ -93,7 +96,7 @@
       T.frame.rotation.y = m.vf || 0;
       { let j = 0; for (const s of T.s) { s.age += dt; if (s.age < s.life) T.s[j++] = s; } T.s.length = j; }
       if (key) {
-        if (key !== T.key) { T.key = key; T.stroke = (T.stroke || 0) + 1; const it = p.equip && p.equip.weapon; const c = (it && CFG.items[it]) || CFG; T.c0.setHex(c.core); T.c1.setHex(c.edge); T.big = key[0] === 's' && !!m.swingBig; }
+        if (key !== T.key) { T.key = key; T.stroke = (T.stroke || 0) + 1; const it = p.equip && p.equip.weapon; const c = (m.swingArc && CFG.styles[m.swingArc]) || (it && CFG.items[it]) || CFG; T.c0.setHex(c.core); T.c1.setHex(c.edge); T.big = key[0] === 's' && !!m.swingBig; }
         // blade base and tip in world space, after this frame's pose
         const inner = sw.userData.inner, L = sw.userData.bladeLen || 0.86, y0 = sw.userData.bladeY0 || 0.1;
         m.root.updateMatrixWorld(true);
@@ -128,6 +131,32 @@
       for (const at of ['position', 'aA', 'aV', 'aCore', 'aEdge']) g.attributes[at].needsUpdate = true;
       g.index.needsUpdate = true; g.setDrawRange(0, ii);
       T.mesh.visible = ii > 0;
+    },
+    // the thrust: a straight streak from (x,z) along (dx,dz), thin at both ends, white along the middle line
+    streak(x, z, dx, dz, len, style) {
+      const st = CFG.styles[style] || CFG, SC = CFG.streak, M = 12;
+      let o = (R._streakPool || (R._streakPool = [])).pop();
+      if (!o) {
+        const g = new THREE.BufferGeometry(), n = (M + 1) * 3;
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); g.setAttribute('aA', new THREE.BufferAttribute(new Float32Array(n), 1)); g.setAttribute('aV', new THREE.BufferAttribute(new Float32Array(n), 1));
+        g.setAttribute('aCore', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); g.setAttribute('aEdge', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+        const idx = []; for (let k = 0; k < M; k++) { const a = k * 3; for (const [p0, p1] of [[0, 1], [1, 2]]) { idx.push(a + p0, a + p1, a + 3 + p0, a + p1, a + 3 + p1, a + 3 + p0); } } g.setIndex(idx);
+        const mesh = new THREE.Mesh(g, material()); mesh.frustumCulled = false; mesh.renderOrder = 5; o = { mesh, g, A0: new Float32Array(n) }; R.fx.add(mesh);
+      }
+      const g = o.g, pos = g.attributes.position.array, aV = g.attributes.aV.array, cc = g.attributes.aCore.array, ce = g.attributes.aEdge.array, c0 = new THREE.Color(st.core), c1 = new THREE.Color(st.edge);
+      const px = -dz, pz = dx, y = 1.0;
+      for (let k = 0; k <= M; k++) {
+        const u = k / M, w = SC.width * 0.5 * Math.pow(Math.sin(Math.PI * Math.min(1, u * 0.85 + 0.08)), 0.7) * (0.6 + 0.4 * u), cx = x + dx * len * u, cz = z + dz * len * u;
+        for (let j = 0; j < 3; j++) { const i = k * 3 + j, sd = j - 1; pos[i * 3] = cx + px * w * sd; pos[i * 3 + 1] = y; pos[i * 3 + 2] = cz + pz * w * sd; aV[i] = j === 1 ? 1 : 0; o.A0[i] = 0.35 + 0.65 * Math.sin(Math.PI * Math.min(1, u * 0.9 + 0.1)); cc[i * 3] = c0.r; cc[i * 3 + 1] = c0.g; cc[i * 3 + 2] = c0.b; ce[i * 3] = c1.r; ce[i * 3 + 1] = c1.g; ce[i * 3 + 2] = c1.b; }
+      }
+      for (const a of ['position', 'aV', 'aCore', 'aEdge']) g.attributes[a].needsUpdate = true;
+      o.t = 0; o.life = SC.life; o.mesh.visible = true; (R._streaks || (R._streaks = [])).push(o); R.trail.tickStreaks(0);
+    },
+    // fade the live streaks (called once per frame from R.trail.frame)
+    tickStreaks(dt) {
+      const L = R._streaks || []; for (let i = L.length - 1; i >= 0; i--) { const o = L[i]; o.t += dt; const k = 1 - o.t / o.life;
+        if (k <= 0) { o.mesh.visible = false; L.splice(i, 1); R._streakPool.push(o); continue; }
+        const aA = o.g.attributes.aA.array; for (let j = 0; j < aA.length; j++) aA[j] = o.A0[j] * Math.pow(k, 1.3) * 1.6; o.g.attributes.aA.needsUpdate = true; }
     },
     // drop every arc at once (death, room change, weapon swap); the mesh stays for reuse
     clear(m) { const T = m && m.trail; if (!T) return; T.s.length = 0; T.key = null; T.mesh.visible = false; T.g.setDrawRange(0, 0); },

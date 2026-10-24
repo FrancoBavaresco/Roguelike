@@ -263,11 +263,15 @@ H.SPELLS.sword_slash = { id: 'sword_slash', stam: 7, ups: { range: 0.3, dmg: 0.2
   chargeOff: { window: 0.35, dmgMul: 1.9, radius: 2.8, knock: 6 }, quick: { angle: 45, rangeMul: 1.1 },
   // dash combo: two quick cuts, then a horizontal slash that shoves and stuns weak foes
   quickFinisher: { dmgMul: 1.3, angle: 180, rangeMul: 1.15, delay: 0.08, knock: 9, stunWeak: 1.1 },
-  // ground combo: two fast slashes, then a heavier horizontal slash that shoves foes back; after it, a short pause
+  // ground combo (3 clicks): 1 horizontal 180° slash · 2 vertical chop, 25° and shorter · 3 forward thrust that pierces
+  // everyone in a 2 m line, then a short step forward. After the 3rd, a short pause. delay = when the blade cuts.
   // hold the button: after the tap's slash, keep holding to wind up a full-circle Charged Whirl
   hold: { start: 0.22, time: 0.55, dmgMul: 2.4, radius: 3.1, knock: 8, stamMul: 1.6, cd: 0.45 },
-  combo: { gap: 0.1, window: 0.6, recover: 0.6, finisher: { dmgMul: 1.8, angle: 180, rangeMul: 1.1, delay: 0.2, knock: 9 } },
-  desc: s => `Quick, light slash in front of you: ${s.dmg} damage. Combo: two fast slashes, then a heavier horizontal slash that shoves foes back (${Math.round(s.dmg * 1.8)}); then a short pause. Slash during a dash, or right after it, for a rushing combo: two quick cuts (${Math.round(s.dmg * 1.4)}) and a horizontal slash that shoves and stuns weak foes (${Math.round(s.dmg * 1.4 * 1.3)}). Hold the button to wind up a Charged Whirl all around you: ${Math.round(s.dmg * 2.4)} damage.` };
+  combo: { window: 0.6, recover: 0.6, finisher: { dmgMul: 1.8, angle: 180, rangeMul: 1.1, delay: 0.2, knock: 9 }, hits: [
+    { shape: 'sweep', swing: 'slash', arc: 'hot', big: true, angle: 180, rangeMul: 1.0, dmgMul: 1.0, knock: 6, delay: 0.05, gap: 0.14 },
+    { shape: 'cone', swing: 'chop', arc: 'red', angle: 25, rangeMul: 0.75, dmgMul: 1.4, knock: 3, delay: 0.1, gap: 0.16 },
+    { shape: 'line', swing: 'thrust', arc: 'hot', len: 2.0, width: 0.75, dmgMul: 1.8, knock: 5, delay: 0.11, step: 7 }] },
+  desc: s => `Three-hit combo: a horizontal slash across the whole front (${s.dmg}), a downward chop on what's straight ahead (${Math.round(s.dmg * 1.4)}), and a thrust that pierces every foe in a 2 m line (${Math.round(s.dmg * 1.8)}) and carries you a step forward; then a short pause. Slash during a dash, or right after it, for a rushing combo: two quick cuts (${Math.round(s.dmg * 1.4)}) and a horizontal slash that shoves and stuns weak foes (${Math.round(s.dmg * 1.4 * 1.3)}). Hold the button to wind up a Charged Whirl all around you: ${Math.round(s.dmg * 2.4)} damage.` };
 H.SPELLS.sword_thrust = { id: 'sword_thrust', stam: 22, ups: { range: 0.6, dmg: 0.25 , cd: 0.12 }, weapon: 'sword', dtype: 'pierce', hero: 'knight', name: 'Thrust', el: 'stone', role: 'attack', kind: 'thrust', glyph: 'k_thrust', cd: 5, cost: 0, range: 3.6, dmg: 16, width: 0.7, status: 'bleed', stacks: 2, lunge: { min: 2.0, max: 6.6, tip: 1.2, speed: 25, fullSpeed: 32 }, chargeable: { time: 0.8, hold: 1.2, fullMul: 1.3 },
   desc: s => `Hold to wind up: the arrow on the floor shows exactly how far you will dash. Release to lunge along it, piercing every foe on the way for ${s.dmg} damage and Bleeding. Fully charged: faster and +30% damage.` };
 H.SPELLS.sword_cleave = { id: 'sword_cleave', stam: 30, ups: { range: 0.4, dmg: 0.25 , cd: 0.12 }, weapon: 'sword', dtype: 'slash', hero: 'knight', name: 'Mighty Blow', el: 'stone', role: 'attack', kind: 'cleave', glyph: 'k_cleave', cd: 10, cost: 0, range: 3.2, dmg: 32, angle: 90, knock: 7,
@@ -290,7 +294,10 @@ H.SPELLS.bastard_slash = { id: 'bastard_slash', stam: 12, ups: { range: 0.3, dmg
   // same combos as the steel sword, slower and with more reach
   quick: { angle: 45, rangeMul: 1.1 }, quickFinisher: { dmgMul: 1.3, angle: 180, rangeMul: 1.15, delay: 0.1, knock: 11, stunWeak: 1.2 },
   hold: { start: 0.22, time: 0.65, dmgMul: 2.4, radius: 3.8, knock: 9, stamMul: 1.6, cd: 0.55 },
-  combo: { gap: 0.16, window: 0.7, recover: 0.75, finisher: { dmgMul: 1.8, angle: 180, rangeMul: 1.1, delay: 0.24, knock: 11 } },
+  combo: { window: 0.7, recover: 0.75, finisher: { dmgMul: 1.8, angle: 180, rangeMul: 1.1, delay: 0.24, knock: 11 }, hits: [
+    { shape: 'sweep', swing: 'slash', arc: 'hot', big: true, angle: 180, rangeMul: 1.0, dmgMul: 1.0, knock: 8, delay: 0.06, gap: 0.2 },
+    { shape: 'cone', swing: 'chop', arc: 'red', angle: 25, rangeMul: 0.75, dmgMul: 1.4, knock: 4, delay: 0.12, gap: 0.22 },
+    { shape: 'line', swing: 'thrust', arc: 'hot', len: 2.6, width: 0.85, dmgMul: 1.8, knock: 7, delay: 0.13, step: 8 }] },
   desc: s => `A slow, heavy slash: ${s.dmg} damage and Bleeding. Combo: two slashes, then a heavier horizontal slash that shoves foes back (${Math.round(s.dmg * 1.8)}); then a short pause. Attack out of a dash for a rushing combo: two quick cuts and a horizontal slash that shoves and stuns weak foes. Hold the button for a Charged Whirl: ${Math.round(s.dmg * 2.4)} damage all around you.` };
 for (const [src, id, name] of [['sword_thrust', 'bastard_thrust', 'Long Thrust'], ['sword_cleave', 'bastard_cleave', 'Great Cut'], ['sword_spin', 'bastard_spin', 'Great Whirl']]) {
   const b = H.SPELLS[src], R = 1.7;

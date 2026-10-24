@@ -267,6 +267,7 @@ R.decal = function (x, z, color, r, dur, tex) {
   R.decals.push({ m, t: 0, dur });
 };
 R.updateFx = function (dt) {
+  if (R.trail && R.trail.tickStreaks) R.trail.tickStreaks(dt);
   for (const r of R.rings) { if (!r.on) continue; r.t += dt; const k = r.t / r.dur; if (k >= 1) { r.on = false; r.m.visible = false; continue; } const e = 1 - Math.pow(1 - k, 3); const s = r.r0 + (r.r1 - r.r0) * e; r.m.scale.set(s, s, s); r.m.material.opacity = r.op * (1 - k); }
   for (let i = R.arcs.length - 1; i >= 0; i--) {
     const c = R.arcs[i]; c.t += dt; const THREE = T3();
@@ -1521,6 +1522,7 @@ R.animateSword = function (m, p, dt) {
   else if (p.spinT > 0 || m.twirlT > 0) { oy = -1.5; ix = -1.57; }
   else if (on && m.swing === 'slash') { oy = -1.4 + 2.8 * e; ix = -1.45; }
   else if (on && m.swing === 'thrust') { ix = -1.57; }
+  else if (on && m.swing === 'chop') { const up = t < 0.35 ? t / 0.35 : 0, cut = t < 0.35 ? 0 : Math.min(1, (t - 0.35) / 0.25), ce = cut * cut * (3 - 2 * cut); ix = t < 0.35 ? -1.25 + 2.45 * up : 1.2 - 3.1 * ce; }
   else if (on && m.swing === 'smash') { const up = t < 0.5 ? t / 0.5 : 0, slam = t < 0.5 ? 0 : Math.min(1, (t - 0.5) / 0.15); ix = t < 0.5 ? -1.25 + 2.35 * up : 1.1 - 3.1 * slam; }
   else if (on && m.swing === 'backhand') { const cut = t < 0.42 ? 0 : Math.min(1, (t - 0.42) / 0.25), ce = cut * cut * (3 - 2 * cut); oy = -1.5 + 2.9 * ce; ix = -1.5; }
   else if (on && m.swing === 'throw') { const wind = t < 0.3 ? t / 0.3 : 0; ix = -1.25 + 2.0 * wind; }
@@ -1602,7 +1604,7 @@ R.readHeroAnim = function (m, p) {
   if (m._castN === undefined) { m._castN = A.castN; m._swingN = A.swingN; m._twirlN = A.twirlN; m._el = A.el; } // a fresh model starts in sync, without replaying old events
   if (A.castN !== m._castN) { m._castN = A.castN; m.castT = 1; }
   m.castSide = A.castSide;
-  if (A.swingN !== m._swingN) { m._swingN = A.swingN; m.swing = A.swing; m.swingT = 1; m.swingBig = A.bigN === A.swingN; } // swingBig: a combo finisher (bigger energy arc)
+  if (A.swingN !== m._swingN) { m._swingN = A.swingN; m.swing = A.swing; m.swingT = 1; m.swingBig = A.bigN === A.swingN; m.swingArc = A.arcN === A.swingN ? A.arc : null; } // swingBig: a combo finisher (bigger energy arc)
   if (A.twirlN !== m._twirlN) { m._twirlN = A.twirlN; m.twirlT = 0.26; m.swingT = 0; }
   m.chargeK = A.chargeK;
   if (A.el !== m._el) { m._el = A.el; if (A.el) R.setRogueElement(m, A.el); }
@@ -1652,13 +1654,14 @@ R.animateRogue = function (m, p, dt) {
   const ph = m.walk, stride = Math.sin(ph) * mk;
   // attack / action pose (all additive, smoothed so nothing pops)
   const ct0 = m.castT || 0;
-  m.swingT = Math.max(0, (m.swingT || 0) - dt * ({ cleave: 2.6, smash: 2.2, throw: 3.2, backhand: 2.4 }[m.swing] || 3.6));
+  m.swingT = Math.max(0, (m.swingT || 0) - dt * ({ cleave: 2.6, smash: 2.2, throw: 3.2, backhand: 2.4, chop: 4.0 }[m.swing] || 3.6));
   const sw = m.swingT > 0 ? m.swing : null, st = 1 - m.swingT, se = st * st * (3 - 2 * st), arc = Math.sin(Math.PI * st);
   const T = { yaw: 0, pitch: 0, dip: 0, roll: 0, l0: 0, l1: 0 };
   if (p.spinT > 0) { T.pitch = -0.08; T.dip = -0.06; T.l0 = 0.25; T.l1 = -0.25; }
   else if (sw === 'slash') { T.yaw = -0.45 + 0.9 * se; T.pitch = -0.1; T.dip = -0.03; T.l0 = 0.2; T.l1 = -0.15; }
   else if (sw === 'thrust') { T.yaw = -0.3; T.pitch = -0.28 * arc; T.dip = -0.08 * arc; T.l0 = 0.6 * arc; T.l1 = -0.45 * arc; }
   else if (sw === 'cleave') { const wind = st < 0.3 ? st / 0.3 : 1, cut = st < 0.3 ? 0 : Math.min(1, (st - 0.3) / 0.22), ce = cut * cut * (3 - 2 * cut); T.yaw = -0.6 * wind + 1.15 * ce; T.pitch = 0.06 * (1 - cut) - 0.3 * ce; T.dip = -0.14 * ce; T.l0 = 0.5 * ce; T.l1 = -0.4 * ce; T.roll = 0.06 * ce; }
+  else if (sw === 'chop') { const up = st < 0.35 ? st / 0.35 : 0, cut = st < 0.35 ? 0 : Math.min(1, (st - 0.35) / 0.25); T.pitch = 0.12 * up - 0.34 * cut; T.dip = -0.04 * up - 0.14 * cut; T.l0 = 0.45 * cut; T.l1 = -0.35 * cut; T.yaw = -0.1 * up; }
   else if (sw === 'smash') { const up = st < 0.5 ? st / 0.5 : 0, slam = st < 0.5 ? 0 : Math.min(1, (st - 0.5) / 0.15); T.pitch = 0.14 * up - 0.38 * slam; T.dip = -0.05 * up - 0.2 * slam; T.l0 = 0.5 * slam; T.l1 = -0.4 * slam; }
   else if (sw === 'backhand') { const cut = st < 0.42 ? 0 : Math.min(1, (st - 0.42) / 0.25); T.yaw = 0.5 * cut; T.pitch = -0.25 * cut; T.dip = -0.1 - 0.06 * cut; T.l0 = 0.45; T.l1 = -0.35; }
   else if (sw === 'throw') { const wind = st < 0.3 ? st / 0.3 : 0, rel = st < 0.3 ? 0 : Math.min(1, (st - 0.3) / 0.2); T.yaw = -0.5 * wind + 0.35 * rel; T.pitch = 0.08 * wind - 0.2 * rel; T.l0 = 0.4 * rel; T.l1 = -0.3 * rel; }
@@ -1736,7 +1739,8 @@ R.animateRogue = function (m, p, dt) {
     else if (sw === 'cleave') { const wind = st < 0.3 ? st / 0.3 : 1, cut = st < 0.3 ? 0 : Math.min(1, (st - 0.3) / 0.22), ce = cut * cut * (3 - 2 * cut); const x = 0.5 * wind - 0.9 * ce, y = 1.0 + 0.45 * wind - 0.5 * ce, z = -0.1 - 0.15 * wind - 0.35 * ce; m.hR.position.set(x, y, z); m.hL.position.set(x - 0.14, y - 0.05, z + 0.05); }
   }
   if (m.sword) {
-    if (sw === 'smash') { const up = st < 0.5 ? st / 0.5 : 0, slam = st < 0.5 ? 0 : Math.min(1, (st - 0.5) / 0.15); m.hR.position.set(0.12, 1.0 + 0.8 * up - 0.15 * slam, -0.2 + 0.2 * up - 0.45 * slam); }
+    if (sw === 'chop') { const up = st < 0.35 ? st / 0.35 : 0, cut = st < 0.35 ? 0 : Math.min(1, (st - 0.35) / 0.25); m.hR.position.set(0.18 - 0.06 * cut, 1.0 + 0.75 * up - 0.12 * cut + (cut > 0 ? 0.75 * (1 - cut) : 0), -0.25 + 0.15 * up - 0.4 * cut); }
+    else if (sw === 'smash') { const up = st < 0.5 ? st / 0.5 : 0, slam = st < 0.5 ? 0 : Math.min(1, (st - 0.5) / 0.15); m.hR.position.set(0.12, 1.0 + 0.8 * up - 0.15 * slam, -0.2 + 0.2 * up - 0.45 * slam); }
     else if (sw === 'backhand') { const cut = st < 0.42 ? 0 : Math.min(1, (st - 0.42) / 0.25), ce = cut * cut * (3 - 2 * cut); m.hR.position.set(0.6 - 1.0 * ce, 1.1 - 0.1 * ce, -0.15 - 0.35 * ce); }
     else if (sw === 'throw') { const wind = st < 0.3 ? st / 0.3 : 0, rel = st < 0.3 ? 0 : Math.min(1, (st - 0.3) / 0.2); m.hR.position.set(0.45 - 0.2 * rel, 1.1 + 0.3 * wind, -0.2 + 0.4 * wind - 0.6 * rel); }
     else if (m.twoHand && !sw && !p.charge && !(p.spinT > 0) && !(m.twirlT > 0)) { const bob = Math.sin(m.t * 3) * 0.02 * (1 - mk); m.hR.position.set(0.24, 1.0 + bob, -0.3 - 0.06 * mk); }
