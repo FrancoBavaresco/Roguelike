@@ -1564,8 +1564,10 @@ G.xpNeed = L => Math.round(22 + 14 * (L - 1) + 1.5 * (L - 1) * (L - 1));
 G.xpFor = e => {
   if (e.boss) return 60 + 50 * (G.run ? G.run.depth : 1);
   const base = { husk: 6, spitter: 7, wisp: 4, hexcaster: 10, shieldbearer: 12, brute: 17, summoner: 14, regent_echo: 10 }[e.type] || Math.round((e.def.cost || 1) * 6);
-  return Math.round(base * 1.5 * (e.elite ? 4 : 1) * (e.split ? 0.4 : 1));
+  return Math.max(1, Math.round(base * G.ENEMY_XP_MUL * (e.elite ? 4 : 1) * (e.split ? 0.4 : 1)));
 };
+/* XP per enemy killed (×base above). Was 1.5; lowered 30% so levelling takes longer. Bosses and room-clear XP unchanged. */
+G.ENEMY_XP_MUL = 1.05;
 G.gainXP = function (n, src) {
   const run = G.run; if (!run || run.mode === 'tutorial' || !n) return;
   run.xp += n; run.xpTotal += n;
