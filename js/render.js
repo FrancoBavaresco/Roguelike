@@ -2109,7 +2109,7 @@ R.updateCamera = function (dt, snap) {
   const zoom = f.zoom * (aspect < 1.3 ? 1.25 : aspect > 2 ? 0.95 : 1) * (R.mobileZoom || 1);
   const target = new (T3().Vector3)(f.x, 0, f.z);
   const desired = new (T3().Vector3)(f.x, 19 * zoom, f.z + 12.5 * zoom);
-  const k = snap ? 1 : 1 - Math.exp(-dt * 6);
+  const k = snap ? 1 : 1 - Math.exp(-dt * ((H.MOVE && H.MOVE.camFollow) || 6));
   R.camPos.lerp(desired, k); R.camLook.lerp(target, k);
   R.kick.x *= Math.exp(-dt * 12); R.kick.z *= Math.exp(-dt * 12);
   R.shakeT = Math.max(0, R.shakeT - dt * 1.6);
@@ -2144,7 +2144,7 @@ R.updateIsoCamera = function (dt, snap) {
   const f = R.follow, cam = R.orthoCam, I = R.ISO;
   const aspect = R.vw / R.vh;
   const zoom = f.zoom * (aspect < 1.3 ? 1.25 : aspect > 2 ? 0.95 : 1) * (R.mobileZoom || 1);
-  const k = snap ? 1 : 1 - Math.exp(-dt * 6);
+  const k = snap ? 1 : 1 - Math.exp(-dt * ((H.MOVE && H.MOVE.camFollow) || 6));
   // camLook follows the action; camPos.y carries the view height so zoom changes ease in like before
   R.camLook.x += (f.x - R.camLook.x) * k; R.camLook.z += (f.z - R.camLook.z) * k;
   R.camPos.y += (I.halfH * zoom - R.camPos.y) * k; if (snap || !(R.camPos.y > 0)) R.camPos.y = I.halfH * zoom;

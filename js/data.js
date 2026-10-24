@@ -458,6 +458,16 @@ for (const id in H.ITEMS) H.ITEMS[id].id = id;
 
 /* Enemy aggression tuning */
 /* Stamina (the Veteran only): attacks spend it, it refills after a short pause in attacking. */
+/* Movement feel (all heroes). Distances in metres, times in seconds. The simulation runs at a fixed 1/60 s.
+   speed        top running speed (gear and attributes scale it in recalcPlayer)
+   accelTime    time to reach ~95% of top speed from rest or when turning
+   decelTime    time to come to a stop (~95%) after letting go
+   dashDist     how far one dash carries (its speed is dashDist / dashTime)
+   dashTime     how long a dash lasts (a dash never ends over a pit or a column: it carries on until clear)
+   dashExit     share of the running speed kept when a dash ends without input (with input you just keep running)
+   dashRecharge seconds to get one dash charge back · dashCharges: base charges
+   camFollow    how fast the camera catches up with the hero (higher = less lag) */
+H.MOVE = { speed: 7.2, accelTime: 0.06, decelTime: 0.08, dashDist: 4.8, dashTime: 0.14, dashExit: 0.35, dashRecharge: 1.35, dashCharges: 2, camFollow: 9 };
 H.STAMINA = { max: 100, regen: 45, delay: 0.3, chargedMul: 1.6 };
 H.ENEMY_DMG_MUL = 1.35;     // direct hits
 H.ENEMY_DOT_MUL = 1.15;     // burning ground, poison clouds…

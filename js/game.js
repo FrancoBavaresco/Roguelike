@@ -95,9 +95,9 @@ G.newRun = function (cfg) {
 G.makePlayer = function (idx, seat) {
   const accent = idx === 0 ? 0xd9a441 : 0x46e0c8;
   const p = {
-    kind: 'player', idx, src: seat.src, x: 0, z: 0, vx: 0, vz: 0, r: 0.5, hp: 100, maxHp: 100, mana: 100, maxMana: 100, manaRegen: 15, speed: 7.2,
+    kind: 'player', idx, src: seat.src, x: 0, z: 0, vx: 0, vz: 0, r: 0.5, hp: 100, maxHp: 100, mana: 100, maxMana: 100, manaRegen: 15, speed: H.MOVE.speed,
     spells: [0, 1, 2, 3].map(i => seat.build[i] ? { id: seat.build[i], rank: 1, cd: 0 } : null), mods: {}, ups: {}, passives: {}, ult: null, equip: { head: null, chest: null, legs: null, feet: null, cloak: null, weapon: null, ring1: null, ring2: null }, gear: {}, bag: new Array(H.BAG_SIZE).fill(null), charms: new Set(), boon: seat.boon || 'none',
-    dashMax: 2, dashCharges: 2, dashRecharge: 0, dashT: 0, dashDX: 0, dashDZ: 0, dashSpeed: 34, iframes: 0, invuln: 0, hurtT: 0, invulnBlink: 0,
+    dashMax: H.MOVE.dashCharges, dashCharges: H.MOVE.dashCharges, dashRecharge: 0, dashT: 0, dashDX: 0, dashDZ: 0, dashSpeed: H.MOVE.dashDist / H.MOVE.dashTime, iframes: 0, invuln: 0, hurtT: 0, invulnBlink: 0,
     faceAng: Math.PI, aimDX: 0, aimDZ: -1, aimPt: null, lastEl: null, ward: null, bastionT: 0, mirrorT: 0, tempoT: 0, secondWind: false, ashUsed: false,
     downed: false, bleedT: 0, reviveK: 0, statuses: {}, slowT: 0, dead: false, color: accent, accentCss: idx === 0 ? '#d9a441' : '#46e0c8',
     intent: null, castLock: 0, dmgDealt: 0, divine: 0, name: idx === 0 ? 'Percy' : 'Rogue II', dashSlowT: 1
@@ -137,8 +137,8 @@ G.recalcPlayer = function (p) {
   p.maxMana = 100 + (p.charms.has('deep_well') ? 30 : 0) + (g.mana || 0); p.mana = Math.min(p.mana, p.maxMana); p.manaRegen = 15 * (p.charms.has('deep_well') ? 1.25 : 1) * (1 + (g.regen || 0));
   const at = p.attrs || {};
   if (p.useStam) p.maxStam = H.STAMINA.max + 15 * (at.vigor || 0);
-  p.speed = 7.2 * (1 + Math.max(-0.3, Math.min(0.45, (g.speed || 0) + 0.05 * (at.footwork || 0))));
-  const dm = 2 + (p.boon === 'spare_breath' ? 1 : 0) + (p.charms.has('spare_breath') ? 1 : 0); if (dm > p.dashMax) p.dashCharges += dm - p.dashMax; p.dashMax = dm;
+  p.speed = H.MOVE.speed * (1 + Math.max(-0.3, Math.min(0.45, (g.speed || 0) + 0.05 * (at.footwork || 0))));
+  const dm = H.MOVE.dashCharges + (p.boon === 'spare_breath' ? 1 : 0) + (p.charms.has('spare_breath') ? 1 : 0); if (dm > p.dashMax) p.dashCharges += dm - p.dashMax; p.dashMax = dm;
 };
 G.clearAll = function () {
   for (const e of G.enemies) H.views.release(e);
@@ -252,7 +252,7 @@ G.loadRoom = function (type, opts = {}) {
   G.room = room;
   H.R.buildChamber(room, H.DEPTHS[Math.min(3, depth)]);
   // place players at entry
-  G.players.forEach((p, i) => { p.x = (i - (G.players.length - 1) / 2) * 1.6; p.z = room.bounds.maxZ - 2; p.vx = p.vz = 0; p.faceAng = 0; p.dashT = 0; p.secondWind = false; p.statuses = {}; p.slowT = 0; p.spinT = 0; p.lungeT = 0; p.lungeHit = null; if (p.charge) { p.charge = null; p.anim.chargeK = 0; H.R.chargeArrow(p, false); } });
+  G.players.forEach((p, i) => { p.x = (i - (G.players.length - 1) / 2) * 1.6; p.z = room.bounds.maxZ - 2; p.vx = p.vz = 0; p.kvx = p.kvz = 0; p.lungeT = 0; p.faceAng = 0; p.dashT = 0; p.secondWind = false; p.statuses = {}; p.slowT = 0; p.spinT = 0; p.lungeT = 0; p.lungeHit = null; if (p.charge) { p.charge = null; p.anim.chargeK = 0; H.R.chargeArrow(p, false); } });
   H.R.follow.x = 0; H.R.follow.z = room.bounds.maxZ - 6; H.R.updateCamera(0, true);
   // encounters
   if (['combat', 'elite', 'warden'].includes(type)) G.setupEncounter(room, type);
@@ -463,7 +463,7 @@ G.updatePlayer = function (p, dt) {
     if (ud.charges && p.ult.cd <= 0 && p.ult.charges < ud.charges) { p.ult.charges++; if (p.ult.charges < ud.charges) { p.ult.cd = p.ult.maxCd || ud.cd; } } }
   p.mana = Math.min(p.maxMana, p.mana + p.manaRegen * dt);
   if (p.useStam) { p.stamT = Math.max(0, p.stamT - dt); if (p.stamT <= 0 && !p.charge && !(p.spinT > 0)) p.stam = Math.min(p.maxStam, p.stam + H.STAMINA.regen * (1 + 0.2 * ((p.attrs && p.attrs.second_breath) || 0)) * dt); }
-  if (p.dashCharges < p.dashMax) { p.dashRecharge += dt * (p.dashSlowT || 1) * (1 + ((p.gear && p.gear.dash) || 0)); if (p.dashRecharge >= 1.35) { p.dashRecharge = 0; p.dashCharges++; } }
+  if (p.dashCharges < p.dashMax) { p.dashRecharge += dt * (p.dashSlowT || 1) * (1 + ((p.gear && p.gear.dash) || 0)); if (p.dashRecharge >= H.MOVE.dashRecharge) { p.dashRecharge = 0; p.dashCharges++; } }
   // player burn (from hazards)
   G.tickPlayerStatuses(p, dt);
   if (p.spinT > 0) {
@@ -499,15 +499,17 @@ G.updatePlayer = function (p, dt) {
     if (p.dashTrail) p.dashTrail(p, dt);
     // a dash never ends inside a column or over a pit: it carries on a little until the hero is clear
     if (p.dashT <= 0 && G.overObstacle(p) && (p.dashExt || 0) < 0.3) { p.dashT = dt; p.dashExt = (p.dashExt || 0) + dt; }
-    else if (p.dashT <= 0) { p.vx = 0; p.vz = 0; p.dashTrail = null; p.dashFx = null; p.dashChainT = 0.35; p.dashExt = 0; p.dashImmune = false; }
+    else if (p.dashT <= 0) { // out of the dash: keep running if a direction is held, otherwise ease out of the remaining speed
+      const run = p.speed, held = Math.hypot(it.mx, it.mz) > 0.2; p.vx = held ? it.mx * run : p.dashDX * run * H.MOVE.dashExit; p.vz = held ? it.mz * run : p.dashDZ * run * H.MOVE.dashExit; p.dashTrail = null; p.dashFx = null; p.dashChainT = 0.35; p.dashExt = 0; p.dashImmune = false; }
   } else {
     p.bufDash = Math.max(0, (p.bufDash || 0) - dt);
     if (p.bufDash > 0 && p.dashCharges > 0 && p.castLock <= 0 && !(p.lungeT > 0)) { p.bufDash = 0; if (p.charge) { p.charge = null; p.anim.chargeK = 0; H.R.chargeArrow(p, false); } if (p.holdA) { p.holdA = null; p.anim.chargeK = 0; } G.dash(p, it); }
     const sp = p.speed * (p.slowT > 0 ? 0.6 : 1) * (p.casting > 0 ? 0.55 : 1) * (p.stSlow || 1) * (p.spinT > 0 ? 1 + ((p.spinSt && p.spinSt.haste) || 0) : 1) * (p.charge ? 0.35 : 1) * (p.holdA && p.holdA.k > 0 ? 0.45 : 1);
     const tx = it.mx * sp, tz = it.mz * sp;
-    const k = 1 - Math.exp(-dt * 16);
     if (p.lungeT > 0) { p.lungeT -= dt; p.vx = p.lungeDX * p.lungeSpeed; p.vz = p.lungeDZ * p.lungeSpeed; G.lungeStrike(p, false); if (Math.random() < 0.8) H.R.emit(p.x, 0.7 + Math.random() * 0.8, p.z, -p.lungeDX * 2, 0.4, -p.lungeDZ * 2, 0.3, 0.45, 0.05, 0xe8ecf2, 0.7, 0, 3); if (p.lungeT <= 0) { p.vx = 0; p.vz = 0; G.lungeStrike(p, true); } }
-    else { p.vx = tx; p.vz = tz; } // Hades-style: velocity follows the keys instantly, no inertia
+    else { // Hades-style: very short acceleration and braking (H.MOVE), so it answers at once without feeling robotic
+      const M = H.MOVE, rate = 3 / ((tx || tz) ? M.accelTime : M.decelTime), kk = 1 - Math.exp(-dt * rate);
+      p.vx += (tx - p.vx) * kk; p.vz += (tz - p.vz) * kk; if (!tx && !tz && Math.hypot(p.vx, p.vz) < 0.05) p.vx = p.vz = 0; }
   }
   p.casting = Math.max(0, (p.casting || 0) - dt);
   // knockback is a separate, fast-decaying push so instant movement doesn't erase it
@@ -564,9 +566,9 @@ G.updatePlayer = function (p, dt) {
 };
 G.dash = function (p, it) {
   let dx = it.mx, dz = it.mz;
-  if (Math.hypot(dx, dz) < 0.2) { dx = p.aimDX; dz = p.aimDZ; if (p.src === 'kbm' && !(Math.hypot(dx, dz) > 0)) { dx = 0; dz = -1; } }
+  if (Math.hypot(dx, dz) < 0.2) { dx = -Math.sin(p.faceAng); dz = -Math.cos(p.faceAng); } // no direction held: dash where the hero is facing
   [dx, dz] = H.norm(dx, dz);
-  p.dashCharges--; p.dashT = 0.17; p.dashDX = dx; p.dashDZ = dz; p.dashSpeed = 34; p.iframes = 0.24 + ((p.gear && p.gear.iframes) || 0);
+  p.dashCharges--; p.dashT = H.MOVE.dashTime; p.dashDX = dx; p.dashDZ = dz; p.dashSpeed = H.MOVE.dashDist / H.MOVE.dashTime; p.iframes = 0.24 + ((p.gear && p.gear.iframes) || 0);
   p.dashImmune = true; p.dashExt = 0; p.quickN = 0;
   // the dash cancels the basic attack's recovery: the first Quick Attack is ready straight away
   if (p.spells[0] && H.SPELLS[p.spells[0].id].role === 'attack') p.spells[0].cd = Math.min(p.spells[0].cd, H.QUICK_ATTACK.cd);   // immune to everything while the dash lasts, unless the hero attacks or casts during it
