@@ -80,6 +80,7 @@
     if (m.twirlT > 0 && CFG.twirl) return 'tw' + m._twirlN;
     if (!(m.swingT > 0) || !m.swing) return null;
     const ph = CFG.phases[m.swing]; if (!ph) return null;
+    if (R.slashFx && R.slashFx.covers(m, p)) return null;   // this swing shows Theron's painted slash instead (js/slashfx.js)
     const st = 1 - m.swingT;
     return st >= ph[0] && st <= ph[1] ? 'sw' + m._swingN : null;
   }
