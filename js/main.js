@@ -38,8 +38,11 @@
       if (target) {
         const d = Math.sqrt(td); const [dx, dz] = H.norm(target.x - p.x, target.z - p.z);
         it.aimMode = 'dir'; it.aimX = dx; it.aimZ = dz;
-        const want = target.boss ? 7 : 5.5;
-        if (!danger) { if (d < want - 1.5) { mx -= dx; mz -= dz; } else if (d > want + 2) { mx += dx; mz += dz; } else { const s = (Math.floor(G.time / 2) % 2 ? 1 : -1); mx += -dz * s * 0.8; mz += dx * s * 0.8; } }
+        // stand-off distance: casters keep away; a melee basic attack (the Veteran's sword) has to close in to its reach
+        const d0 = p.spells[0] && H.SPELLS[p.spells[0].id], melee = d0 && d0.kind === 'melee';
+        const want = melee ? (d0.range || 2.9) * 0.6 + (target.r || 0.5) : target.boss ? 7 : 5.5;
+        const band = melee ? [1, 0.6] : [1.5, 2];
+        if (!danger) { if (d < want - band[0]) { mx -= dx; mz -= dz; } else if (d > want + band[1]) { mx += dx; mz += dz; } else { const s = (Math.floor(G.time / 2) % 2 ? 1 : -1); mx += -dz * s * 0.8; mz += dx * s * 0.8; } }
         if (p.ult && p.ult.cd <= 0 && G.enemiesNear(p.x, p.z, 5).length >= 3) it.pressed.ult = true;
         for (let i = 0; i < 4; i++) { const sp = p.spells[i]; if (!sp) continue; const st = H.spellStats(sp.id, sp.rank, p); if (sp.cd <= 0 && p.mana >= st.cost && Math.random() < 0.25) it.pressed['cast' + (i + 1)] = true; }
       } else if (!G.modal) {

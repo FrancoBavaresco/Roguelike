@@ -550,6 +550,14 @@ h1, h2, h3 { margin: 0; font-weight: 700; text-wrap: balance; }
 
 /* close (X) button on modals and the tutorial box */
 .modal { position: relative; }
+/* a popup taller than the window (narrow windows stack the cards) grows to its full height and the dimmed
+   backdrop scrolls, so its buttons (Leave, Continue…) can always be reached by wheel, touch or keys
+   (short phone screens keep their own rule below: the popup scrolls inside itself) */
+@media (min-height: 501px) {
+  .screen.dim { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+  .screen.dim > .modal { max-height: none; }
+  .screen.dim > .modal > * { flex-shrink: 0; }
+}
 .xbtn { position: absolute; top: 8px; right: 8px; width: 34px; height: 34px; z-index: 3; display: flex; align-items: center; justify-content: center; padding: 0; background: rgba(20,16,26,.9); border: 1px solid var(--line); color: var(--bone); font-size: 22px; line-height: 1; cursor: pointer; pointer-events: auto; }
 .xbtn:hover, .xbtn.focus { border-color: var(--brass-hi); color: #fff; }
 .modal > h2, .modal > .page-head, .modal > .row:first-of-type { padding-right: 40px; }
