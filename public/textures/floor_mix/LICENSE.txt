@@ -1,0 +1,6 @@
+Mixed stone floor for Hexwright, 16 x 16 m pattern (128 px/m), tiles of 1x1 / 2x1 / 2x2 m.
+Built from three Poly Haven scans, all CC0 1.0 (public domain):
+- grey_cartago_01 https://polyhaven.com/a/grey_cartago_01
+- rock_06 https://polyhaven.com/a/rock_06
+- rock_face_03 https://polyhaven.com/a/rock_face_03
+Generator: tools/floor_mix.py

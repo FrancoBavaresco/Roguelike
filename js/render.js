@@ -63,7 +63,7 @@ R.init = function (canvas) {
   R.ready = true;
   R.loadWeaponModels();
   // marble and rock are shared by every room: prepare them while the menu is up, so no room stalls building them
-  setTimeout(() => { try { if (H.settings.look !== 'classic') { R.rockTextures(); R.marbleTextures('beige'); setTimeout(() => R.marbleTextures('grey'), 300); } } catch (e) { /* built on demand instead */ } }, 1200);
+  setTimeout(() => { try { if (H.settings.look !== 'classic') { R.rockTextures(); R.mixFloorMaterial(); R.marbleTextures('beige'); setTimeout(() => R.marbleTextures('grey'), 300); } } catch (e) { /* built on demand instead */ } }, 1200);
 };
 R.applyQuality = function () {
   const q = H.settings.quality;
@@ -546,9 +546,11 @@ R.bandTexture = function () {
   t.wrapS = T3().RepeatWrapping; return (R._bandTex = t);
 };
 R.floorMaterial = function (tint) {
-  if (!R.brickTex) R.brickTex = H.settings.look === 'classic' ? R.makeBrickTextures() : R.makeFlagstoneTextures();
+  if (!R.brickTex && H.settings.look === 'classic') R.brickTex = R.makeBrickTextures();
+  else if (!R.brickTex) R.brickTex = {};
   const T = R.brickTex;
   // flagstones: normal + roughness maps, so lights leave soft sheens on the worn slabs and the joints stay dark
+  if (H.settings.look !== 'classic') return R.mixFloorMaterial(tint);
   if (T.normal) return new (T3().MeshStandardMaterial)({ color: tint, map: T.map, normalMap: T.normal, normalScale: new (T3().Vector2)(0.9, 0.9), roughnessMap: T.rough, roughness: 1, metalness: 0.05 });
   return new (T3().MeshStandardMaterial)({ color: tint, map: T.map, bumpMap: T.bump, bumpScale: 0.035, roughness: 0.92, metalness: 0.02 });
 };
@@ -639,6 +641,18 @@ R.roomStyle = function (room) {
   else if (t === 'challenge') floor = k < 0.5 ? 'mixed' : 'marble';
   else floor = k < 0.6 ? 'stone' : k < 0.8 ? 'marble' : 'mixed';
   return (room._style = { floor, marble: v });
+};
+/* Stone floor: three CC0 scans (grey cartago slabs, rock 06, rock face 03) cut into 1×1 / 2×1 / 2×2 m tiles with
+   joints, grouped in patches of one material with loose tiles mixed in. Baked offline (tools/floor_mix.py) into one
+   seamless 16×16 m texture set; loaded once and shared. The room's light colours it slightly. */
+R.MAT.mix = { dir: 'public/textures/floor_mix/', size: 16, normal: 0.9 };
+R.mixFloorMaterial = function (tint) {
+  const THREE = T3();
+  if (!R._mixTex) { const L = new THREE.TextureLoader(), d = R.MAT.mix.dir, an = Math.min(8, R.renderer.capabilities.getMaxAnisotropy());
+    const ld = (f, srgb) => { const t = L.load(d + f); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / R.MAT.mix.size, 1 / R.MAT.mix.size); t.anisotropy = an; if (srgb) t.encoding = THREE.sRGBEncoding; return t; };
+    R._mixTex = { map: ld('color_2k.jpg', true), normal: ld('nor_gl_2k.jpg'), rough: ld('rough_1k.jpg') }; }
+  const T = R._mixTex, c = new THREE.Color(0xffffff).lerp(tint || new THREE.Color(0xffffff), 0.12);
+  return new THREE.MeshStandardMaterial({ color: c, map: T.map, normalMap: T.normal, normalScale: new THREE.Vector2(R.MAT.mix.normal, R.MAT.mix.normal), roughnessMap: T.rough, roughness: 1, metalness: 0 });
 };
 R.wallMaterial = function (tint) {
   if (H.settings.look !== 'classic') {
