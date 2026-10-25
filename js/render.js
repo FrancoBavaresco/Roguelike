@@ -62,7 +62,8 @@ R.init = function (canvas) {
   window.addEventListener('resize', R.resize);
   R.ready = true;
   R.loadWeaponModels();
-  if (R.slashFx) R.slashFx.preload();   // Theron's painted slash texture (tiny; ready before the first swing)
+  if (R.slashFx) R.slashFx.preload();
+  if (R.dashFx) R.dashFx.preload();   // Theron's painted slash texture (tiny; ready before the first swing)
   // marble and rock are shared by every room: prepare them while the menu is up, so no room stalls building them
   setTimeout(() => { try { if (H.settings.look !== 'classic') { R.rockTextures(); R.mixFloorMaterial(); R.pillarMats(); R.marbleTextures('beige'); setTimeout(() => R.marbleTextures('grey'), 300); } } catch (e) { /* built on demand instead */ } }, 1200);
 };
@@ -2018,6 +2019,8 @@ R.animateRogue = function (m, p, dt) {
   if (R.trail) R.trail.update(m, p, dt);
   // Theron's painted slash: fires on the same cutting phase and replaces the ribbon on the swings it covers
   if (R.slashFx) R.slashFx.update(m, p, dt);
+  // Theron's painted dash trail (js/dashfx.js)
+  if (R.dashFx) R.dashFx.update(m, p, dt);
 };
 /* ---- Hero .glb (the Veteran as Theron): the procedural rig keeps running unseen and still drives the sword hand;
    the model plays its clips and its arm reaches for that hand with IK, so the swing paths stay the game's own. */

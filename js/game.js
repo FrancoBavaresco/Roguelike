@@ -663,7 +663,8 @@ G.dash = function (p, it) {
   if (p.spells[0] && H.SPELLS[p.spells[0].id].role === 'attack') p.spells[0].cd = Math.min(p.spells[0].cd, H.QUICK_ATTACK.cd);   // immune to everything while the dash lasts, unless the hero attacks or casts during it
   p.tempoT = p.charms.has('tempo_loop') ? 1.5 : 0;
   H.audio.play('dash'); H.R.kickCam(dx, dz, 0.25);
-  H.R.burst(p.x, 0.4, p.z, p.color, 12, 4, 0.4, 0.4, { flat: true });
+  p.anim.dashN = (p.anim.dashN || 0) + 1;   // view only: starts the dash trail (Theron's painted one, js/dashfx.js)
+  if (!(H.R.dashFx && H.R.dashFx.active(p.charId))) H.R.burst(p.x, 0.4, p.z, p.color, 12, 4, 0.4, 0.4, { flat: true });
   if (p.charms.has('rift_heel')) { const sx = p.x, sz = p.z; G.after(() => { if (!G.active) return; G.voidTear(p, sx, sz, p.x, p.z); }, 180); }
   if (p.passives && p.passives.fire_dash) {
     const ps = H.passiveStats('fire_dash', p); let acc = 1;

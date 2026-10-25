@@ -1,0 +1,144 @@
+{
+ "fps": 40,
+ "first": 2,
+ "frames": 18,
+ "scale": 0.5,
+ "source_frame": 896,
+ "dirs": {
+  "E": {
+   "w": 309,
+   "h": 145,
+   "cols": 3,
+   "rows": 6,
+   "pivot": [
+    224.0,
+    81.0
+   ],
+   "layers": [
+    "Capa (estela de tela)",
+    "FX - Destello",
+    "FX - Niebla y gotas",
+    "FX - Corte",
+    "FX - Estela baja"
+   ]
+  },
+  "NE": {
+   "w": 293,
+   "h": 221,
+   "cols": 4,
+   "rows": 5,
+   "pivot": [
+    223.0,
+    84.0
+   ],
+   "layers": [
+    "Capa (estela de tela)",
+    "FX - Destello",
+    "FX - Niebla y gotas",
+    "FX - Corte",
+    "FX - Estela baja"
+   ]
+  },
+  "N": {
+   "w": 145,
+   "h": 309,
+   "cols": 6,
+   "rows": 3,
+   "pivot": [
+    81.0,
+    85.0
+   ],
+   "layers": [
+    "Capa (estela de tela)",
+    "FX - Destello",
+    "FX - Niebla y gotas",
+    "FX - Corte",
+    "FX - Estela baja"
+   ]
+  },
+  "NW": {
+   "w": 293,
+   "h": 221,
+   "cols": 4,
+   "rows": 5,
+   "pivot": [
+    70.0,
+    84.0
+   ],
+   "layers": [
+    "Capa (estela de tela)",
+    "FX - Destello",
+    "FX - Niebla y gotas",
+    "FX - Corte",
+    "FX - Estela baja"
+   ]
+  },
+  "W": {
+   "w": 309,
+   "h": 145,
+   "cols": 3,
+   "rows": 6,
+   "pivot": [
+    85.0,
+    81.0
+   ],
+   "layers": [
+    "Capa (estela de tela)",
+    "FX - Destello",
+    "FX - Niebla y gotas",
+    "FX - Corte",
+    "FX - Estela baja"
+   ]
+  },
+  "SW": {
+   "w": 293,
+   "h": 221,
+   "cols": 4,
+   "rows": 5,
+   "pivot": [
+    70.0,
+    137.0
+   ],
+   "layers": [
+    "Capa (estela de tela)",
+    "FX - Destello",
+    "FX - Niebla y gotas",
+    "FX - Corte",
+    "FX - Estela baja"
+   ]
+  },
+  "S": {
+   "w": 235,
+   "h": 271,
+   "cols": 5,
+   "rows": 4,
+   "pivot": [
+    104.0,
+    224.0
+   ],
+   "layers": [
+    "FX - Burbujas",
+    "FX - Niebla y gotas",
+    "FX - Destello",
+    "FX - Llamas"
+   ]
+  },
+  "SE": {
+   "w": 293,
+   "h": 221,
+   "cols": 4,
+   "rows": 5,
+   "pivot": [
+    223.0,
+    137.0
+   ],
+   "layers": [
+    "Capa (estela de tela)",
+    "FX - Destello",
+    "FX - Niebla y gotas",
+    "FX - Corte",
+    "FX - Estela baja"
+   ]
+  }
+ }
+}
