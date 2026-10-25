@@ -806,8 +806,10 @@ G.SPELL = {
       // rushing slash: a full-circle whirl of the blade out of the dash
       const R0 = ch.radius + Math.max(0, st.range - def.range), dmg = Math.round(st.dmg * ch.dmgMul);
       p.anim.twirlN++; // the view starts the whirl and cancels the swing
-      H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0, 0xf6ecd4, 0.38); H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0 * 0.7, 0xcfd8e6, 0.3, 0.14);
-      H.R.burst(p.x, 0.5, p.z, 0xe8ecf2, 26 * G.fxMul(p), 8, 0.35, 0.4, { flat: true });
+      if (!G.paintedSlash(p, def)) {
+        H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0, 0xf6ecd4, 0.38); H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0 * 0.7, 0xcfd8e6, 0.3, 0.14);
+        H.R.burst(p.x, 0.5, p.z, 0xe8ecf2, 26 * G.fxMul(p), 8, 0.35, 0.4, { flat: true });
+      }
       H.R.shake(0.24); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.05);
       let hit = 0; for (const e of G.enemiesNear(p.x, p.z, R0)) { const [kx, kz] = H.norm(e.x - p.x, e.z - p.z); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: ch.knock, interrupt: true, phys: true, cone: true })); hit++; }
       if (hit) H.audio.play('sword_hit', { heavy: true });
@@ -824,7 +826,7 @@ G.SPELL = {
     // a weapon with its own Quick Attack shape (the sword: a fast, narrow 45° cut straight ahead)
     const qa = G.quick && def.quick;
     const R0 = st.range * (qa ? def.quick.rangeMul || 1 : 1), ang = (qa ? def.quick.angle : def.angle) * Math.PI / 360; let hit = 0;
-    if (qa) { H.R.slashArc(p.x, p.z, base, ang, 0.4, R0, 0xf6ecd4, 0.18); H.R.slashArc(p.x, p.z, base, ang * 0.6, 0.4, R0 * 0.8, 0xcfd8e6, 0.14, 0.14); }
+    if (qa && !G.paintedSlash(p, def)) { H.R.slashArc(p.x, p.z, base, ang, 0.4, R0, 0xf6ecd4, 0.18); H.R.slashArc(p.x, p.z, base, ang * 0.6, 0.4, R0 * 0.8, 0xcfd8e6, 0.14, 0.14); }
     for (const e of G.enemies) {
       if (e.dead || e.spawnK < 1) continue; const dx = e.x - p.x, dz = e.z - p.z, d = Math.hypot(dx, dz);
       if (d > R0 + e.r || Math.abs(H.angDiff(Math.atan2(dx, dz), base)) > ang + Math.atan2(e.r, Math.max(d, 0.1))) continue;
@@ -1865,8 +1867,10 @@ G.holdRelease = function (p, s, def) {
   p.aimHoldT = 0.45; p.faceAng = Math.atan2(-p.aimDX, -p.aimDZ); p.casting = 0.14;
   p.anim.twirlN++;
   const R0 = h.radius + Math.max(0, st.range - def.range), dmg = Math.round(st.dmg * h.dmgMul), base = Math.atan2(p.aimDX, p.aimDZ);
-  H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0, 0xfff1c8, 0.4); H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0 * 0.7, 0xcfd8e6, 0.32, 0.14);
-  H.R.burst(p.x, 0.5, p.z, 0xffe9a8, 30 * G.fxMul(p), 9, 0.4, 0.45, { flat: true }); H.R.ring(p.x, p.z, 0xffe9a8, 0.4, R0 * 1.1, 0.35, 0.1, 1, 0.2);
+  if (!G.paintedSlash(p, def)) {
+    H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0, 0xfff1c8, 0.4); H.R.slashArc(p.x, p.z, base, Math.PI, 0.35, R0 * 0.7, 0xcfd8e6, 0.32, 0.14);
+    H.R.burst(p.x, 0.5, p.z, 0xffe9a8, 30 * G.fxMul(p), 9, 0.4, 0.45, { flat: true }); H.R.ring(p.x, p.z, 0xffe9a8, 0.4, R0 * 1.1, 0.35, 0.1, 1, 0.2);
+  }
   H.R.shake(0.3); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.06);
   let hit = 0; for (const e of G.enemiesNear(p.x, p.z, R0)) { const [kx, kz] = H.norm(e.x - p.x, e.z - p.z); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: h.knock, interrupt: true, phys: true, cone: true, spell: def.id })); hit++; }
   if (hit) H.audio.play('sword_hit', { heavy: true });
@@ -1927,6 +1931,8 @@ G.divineCall = function (p, greater) {
 /* One hit of the sword's ground combo (def.combo.hits): the swing starts now, the blade lands after hd.delay.
    sweep = arc in front (hd.angle) · cone = narrow arc, shorter reach · line = a thrust that pierces every foe
    in a hd.len × hd.width strip, then a short step forward. */
+// Theron's swords show only the painted slash (js/slashfx.js): no floor silhouettes, streaks or sparks for the hit area
+G.paintedSlash = (p, def) => !!(def && def.weapon && H.R && H.R.slashFx && H.R.slashFx.active(p.charId, def.weapon));
 G.comboHit = function (p, def, st, hd) {
   const dmg = Math.round(st.dmg * hd.dmgMul);
   p.anim.castSide = 1; p.anim.swing = hd.swing; p.anim.swingN++; p.anim.arcN = p.anim.swingN; p.anim.arc = hd.arc; p.anim.rate = hd.rate || 0;   // rate: swing speed for this hit (0 = the swing's own) if (hd.big) p.anim.bigN = p.anim.swingN;
@@ -1943,7 +1949,7 @@ G.comboHit = function (p, def, st, hd) {
         if (along < -e.r || along > len + e.r || side > hw + e.r) continue;
         G.damage(e, dmg, hitOpts(p, def, st, { kx: ax, kz: az, knock: hd.knock, phys: true, pierce: true, interrupt: true })); hit++;
       }
-      if (H.R.trail && H.R.trail.streak) H.R.trail.streak(x0, z0, ax, az, len + 0.3, hd.arc);
+      if (H.R.trail && H.R.trail.streak && !G.paintedSlash(p, def)) H.R.trail.streak(x0, z0, ax, az, len + 0.3, hd.arc);
       // carried forward by the thrust: a short, easing step (decays with the hero's knockback velocity)
       G.after(() => { if (!G.active || p.dead || p.dashT > 0) return; p.kvx = (p.kvx || 0) + ax * hd.step; p.kvz = (p.kvz || 0) + az * hd.step; }, 60);
       H.R.shake(0.16); H.R.kickCam(ax, az, 0.18);
@@ -1954,7 +1960,8 @@ G.comboHit = function (p, def, st, hd) {
         if (d > R0 + e.r || Math.abs(H.angDiff(Math.atan2(dx, dz), base)) > ang + Math.atan2(e.r, Math.max(d, 0.1)) * (hd.angle < 60 ? 0.5 : 1)) continue;
         const [kx, kz] = H.norm(dx, dz); G.damage(e, dmg, hitOpts(p, def, st, { kx, kz, knock: hd.knock, phys: true, cone: true, interrupt: hd.shape === 'cone' })); hit++;
       }
-      if (hd.shape === 'sweep') { const AC = (H.R.trailCfg && H.R.trailCfg.styles && H.R.trailCfg.styles[hd.arc]) || { edge: 0xff2a3a }; H.R.slashArc(p.x, p.z, base, ang, R0 * 0.55, R0 * 1.1, AC.edge, 0.28); }
+      if (G.paintedSlash(p, def)) { /* the painted slash is the whole effect */ }
+      else if (hd.shape === 'sweep') { const AC = (H.R.trailCfg && H.R.trailCfg.styles && H.R.trailCfg.styles[hd.arc]) || { edge: 0xff2a3a }; H.R.slashArc(p.x, p.z, base, ang, R0 * 0.55, R0 * 1.1, AC.edge, 0.28); }
       else H.R.burst(p.x + ax * R0 * 0.8, 0.3, p.z + az * R0 * 0.8, 0xff4a4a, 14 * G.fxMul(p), 5, 0.3, 0.35, { up: 4 });
       H.R.shake(hd.shape === 'cone' ? 0.22 : 0.16);
     }
@@ -1972,8 +1979,10 @@ G.comboFinisher = function (p, def, st, fin) {
     p.anim.swing = 'slash'; p.anim.swingN++; p.anim.bigN = p.anim.swingN;   // the finisher's energy arc is the big one
     // one floor sweep only, in the energy-arc colour (the old white sweep is gone), a bit wider than the cut
     const EC = H.R.trailCfg || { edge: 0x33d6b0 };
-    H.R.slashArc(p.x, p.z, base, ang, R0 * 0.55, R0 * 1.18, EC.edge, 0.32);
-    H.R.burst(p.x + p.aimDX * R0 * 0.6, 0.8, p.z + p.aimDZ * R0 * 0.6, EC.edge, 16 * G.fxMul(p), 6, 0.3, 0.4, { dir: [p.aimDX, p.aimDZ] });
+    if (!G.paintedSlash(p, def)) {
+      H.R.slashArc(p.x, p.z, base, ang, R0 * 0.55, R0 * 1.18, EC.edge, 0.32);
+      H.R.burst(p.x + p.aimDX * R0 * 0.6, 0.8, p.z + p.aimDZ * R0 * 0.6, EC.edge, 16 * G.fxMul(p), 6, 0.3, 0.4, { dir: [p.aimDX, p.aimDZ] });
+    }
     H.R.shake(0.18); H.audio.play('sword_cleave'); G.hitstop = Math.max(G.hitstop, 0.05);
     let hit = 0;
     for (const e of G.enemies) {
