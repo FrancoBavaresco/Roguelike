@@ -1,8 +1,13 @@
 'use strict';
 /* HEXWRIGHT — Theron's painted sword slash (view only).
-   A hand-painted crescent in three layers (public/textures/fx/theron_slash_1..3.png, split from the painting
-   art/theron_slash2.png by tools/slash_layers.py): 1 = the soft energy glow, 2 = the turquoise crystal blade of light,
-   3 = the sparkles. They build up in that order (2 lands over 1, 3 over 2), then the whole slash fades together.
+   A hand-painted slash in three stages, the three paint layers of art/theron_slash_v3.kra (exported by
+   tools/kra_slash.py to public/textures/fx/theron_slash_1..3.png): 1 = the turquoise sweep, 2 = the blue-white
+   energy arc, 3 = the crystal arc with sparkles. They build up in that order (2 lands over 1, 3 over 2), then the
+   whole slash fades together.
+
+   Direction: the painting runs from a tail (left) to a head (upper right). Each frame of a swing the blade tip is
+   tracked around the hero, so when a slash fires the painting is mirrored if needed to make its head land where
+   the blade is heading (a sweep to the left or to the right, whatever the facing), and a top-down cut ends low.
 
    Sync: the combat code bumps p.anim.swingN (each sword hit) or p.anim.twirlN (the whirls); the view plays the
    swing with m.swingT (1 → 0). A slash fires once per swing when the swing reaches CFG.swings[type].at (a fraction
@@ -24,26 +29,30 @@
     weapons: ['sword', 'bastard'],      // item.weapon types that use it (axes keep their own arcs)
     // the three layers, bottom to top, and when each one appears (seconds after the slash fires)
     layers: [
-      { url: 'public/textures/fx/theron_slash_1.png', at: 0.0 },    // 1: glow
-      { url: 'public/textures/fx/theron_slash_2.png', at: 0.05 },   // 2: crystal, over the glow
-      { url: 'public/textures/fx/theron_slash_3.png', at: 0.1 }     // 3: sparkles, over the crystal
+      { url: 'public/textures/fx/theron_slash_1.png', at: 0.0 },    // 1: turquoise sweep
+      { url: 'public/textures/fx/theron_slash_2.png', at: 0.04 },   // 2: blue-white arc, over 1
+      { url: 'public/textures/fx/theron_slash_3.png', at: 0.08 }    // 3: crystal and sparkles, over 2
     ],
-    fadeIn: 0.035,                      // seconds each layer takes to appear
-    fadeOutAt: 0.19,                    // all layers start fading together here…
-    life: 0.32,                         // …and are gone here (seconds)
+    fadeIn: 0.03,                       // seconds each layer takes to appear
+    fadeOutAt: 0.14,                    // all layers start fading together here…
+    life: 0.25,                         // …and are gone here (seconds)
     opacity: 1.0,                       // peak opacity
-    pivot: [212, 127],                  // pixel of the 512 px painting at the arc's centre of curvature (it sits on the hero)
-    radiusPx: 185,                      // pixel radius of the arc's bright band, used to size the plane
+    pivot: [210, 140],                  // pixel of the 512 px painting at the arc's centre of curvature (it sits on the hero)
+    radiusPx: 175,                      // pixel radius of the arc's bright band, used to size the plane
+    ends: { tail: [20, 200], head: [400, 60] },   // pixels of the painting's tail and head (for the direction)
+    sweep: { slash: 1, whirl: 1 },      // which way each swing runs round the hero (+1 = counter-clockwise seen from above),
+                                        // measured from Theron's animations; re-measured from the blade on every swing
     // per swing type: at (fraction of the swing when it fires), plane ('flat' = lying at blade height, 'up' = standing
     // in the plane of a top-down cut), radius (m from the hero to the bright band), y (height), fwd (m along the
     // facing), spin (in-plane turn in radians; the painting's arc leans 19° to one side, spin centres it), turn
     // (extra turn over its life, the sense of motion), lean (only 'up': 0 upright … 1 square to the camera),
-    // scale0 → scale1 (growth over the life), stretch (forward/back scale, for the thrust), mirror (flip the painting)
+    // scale0 → scale1 (growth over the life), stretch (forward/back scale, for the thrust), mirror ('auto' = follow the
+    // blade; true/false = fixed)
     swings: {
-      slash:  { at: 0.04, plane: 'flat', radius: 1.9, y: 1.0, fwd: 0.0, spin: -0.33, turn: 0.35, scale0: 0.88, scale1: 1.06, mirror: false },
-      chop:   { at: 0.33, plane: 'up', radius: 1.35, y: 1.0, fwd: 0.2, spin: -0.5, turn: 0.45, lean: 0.55, scale0: 0.88, scale1: 1.04, mirror: false },
+      slash:  { at: 0.04, plane: 'flat', radius: 1.9, y: 1.0, fwd: 0.0, spin: -0.33, turn: 0.35, scale0: 0.88, scale1: 1.06, mirror: 'auto' },
+      chop:   { at: 0.33, plane: 'up', radius: 1.35, y: 1.0, fwd: 0.2, spin: -0.5, turn: 0.45, lean: 0.55, scale0: 0.88, scale1: 1.04, mirror: 'auto' },
       thrust: { at: 0.3, plane: 'flat', radius: 1.5, y: 1.0, fwd: 0.6, spin: -0.33, turn: 0.0, scale0: 0.8, scale1: 1.1, stretch: 1.45, mirror: false },
-      whirl:  { plane: 'flat', radius: 2.0, y: 0.9, fwd: 0.0, spin: -0.33, turn: 1.2, scale0: 0.85, scale1: 1.08, copies: 2, mirror: false }
+      whirl:  { plane: 'flat', radius: 2.0, y: 0.9, fwd: 0.0, spin: -0.33, turn: 1.2, scale0: 0.85, scale1: 1.08, copies: 2, mirror: 'auto' }
     },
     big: 1.18                           // size multiplier on the combo finisher (m.swingBig)
   };
@@ -66,7 +75,7 @@
   }
 
   const _f = new THREE.Vector3(), _d = new THREE.Vector3(), _s = new THREE.Vector3(), _n = new THREE.Vector3(), _u = new THREE.Vector3();
-  const _q = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _m = new THREE.Matrix4();
+  const _q = new THREE.Quaternion(), _pq = new THREE.Quaternion(), _m = new THREE.Matrix4(), _h = new THREE.Vector3(), _t = new THREE.Vector3();
   const POOL = 4;   // a whirl uses two at once
   function make(m) {
     const frame = new THREE.Group(), items = [], T = textures();
@@ -104,12 +113,23 @@
     update(m, p, dt) {
       if (!m.root) return;
       const S = m.slash;
+      // follow the blade tip around the hero (in his root's frame) while a swing or whirl plays: its motion tells
+      // which way the cut runs
+      const sw = m.sword, inner = sw && sw.userData.inner;
+      if (inner && (m.swingT > 0 || m.twirlT > 0)) {
+        const T = m._slTip || (m._slTip = { cur: new THREE.Vector3(), prev: new THREE.Vector3(), n: 0 });
+        T.prev.copy(T.cur); m.root.updateMatrixWorld(true);
+        T.cur.set(0, (sw.userData.bladeY0 || 0.1) + (sw.userData.bladeLen || 0.86), 0); inner.localToWorld(T.cur); m.root.worldToLocal(T.cur); T.n++;
+      } else if (m._slTip) m._slTip.n = 0;
       if (m.sword && m.sword.visible && R.slashFx.covers(m, p)) {
         // a whirl: once, as it starts; a swing: once, when it reaches its moment
         if (m.twirlT > 0) { const key = 'tw' + m._twirlN; if (!S || S.key !== key) R.slashFx.fire(m, key, CFG.swings.whirl); }
         else if (m.swingT > 0) { const c = CFG.swings[m.swing], key = 'sw' + m._swingN; if (1 - m.swingT >= c.at && (!S || S.key !== key)) R.slashFx.fire(m, key, c); }
       }
-      if (S) R.slashFx.tick(S, dt);
+      if (S) {
+        for (const o of S.items) if (o.on && o.pending) { const T = m._slTip; if (!T || !T.n || o.tipN0 == null) { o.pending = false; continue; } if (T.n >= o.tipN0 + 5) { const t = o.t; R.slashFx.aim(m, S, o, o.sw); o.pending = false; o.t = t; } }
+        R.slashFx.tick(S, dt);
+      }
     },
     fire(m, key, c) {
       const S = m.slash || (m.slash = make(m));
@@ -117,9 +137,10 @@
       const size = (c.radius / CFG.radiusPx) * 512 * (m.swingBig && key[0] === 's' ? CFG.big : 1);
       for (let n = 0; n < (c.copies || 1); n++) {
         const o = S.items[S.next]; S.next = (S.next + 1) % S.items.length;
-        o.on = true; o.t = 0; o.life = CFG.life; o.sw = c; o.size = size;
+        o.on = true; o.t = 0; o.life = CFG.life; o.sw = c; o.size = size; o.kind = key[0] === 't' ? 'whirl' : m.swing; o.pending = false;
+        const T = m._slTip; o.tipN0 = T && T.n ? T.n : null; o.tipA0 = T && T.n ? Math.atan2(T.cur.x, T.cur.z) : 0;
         // the frame for this slash: the hero's facing now (forward is −z in a frame turned by m.vf); whirl copies spread around him
-        const vf = (m.vf || 0) + n * 2 * Math.PI / (c.copies || 1), f = _f.set(-Math.sin(vf), 0, -Math.cos(vf));
+        const vf = (m.vf || 0) + n * 2 * Math.PI / (c.copies || 1), f = _f.set(-Math.sin(vf), 0, -Math.cos(vf)); o.vf = vf;
         o.holder.position.set(f.x * c.fwd, c.y, f.z * c.fwd);
         if (c.plane === 'up') {
           // a top-down cut: the painting stands in a plane through the facing, its arc bowing forward. The plane rolls
@@ -137,9 +158,41 @@
           o.holder.rotation.set(0, vf, 0);
           o.turner.rotation.set(Math.PI / 2, 0, 0);
         }
-        o.dir = c.mirror ? -1 : 1;
+        o.dir = c.mirror === true ? -1 : 1; o.turnSign = 1;
         for (const L of o.layers) { L.mesh.visible = false; L.mat.opacity = 0; }
+        if (c.mirror === 'auto') R.slashFx.aim(m, S, o, c);
         R.slashFx.pose(o);
+      }
+    },
+    // mirror the painting (and its small turn) so its head lands where the blade is heading
+    aim(m, S, o, c) {
+      const T = m._slTip, mem = S.sweepOf || (S.sweepOf = Object.assign({}, CFG.sweep)); let want = 0;
+      if (c.plane === 'up') want = -1;                                              // a top-down cut: the head ends low
+      else {                                                                        // a sweep: which way round the hero
+        // the blade's travel over the first frames of the cut (one frame can still be the end of the wind-up)
+        if (T && T.n && o.tipN0 != null && T.n >= o.tipN0 + 5) { const d = H.angDiff(Math.atan2(T.cur.x, T.cur.z), o.tipA0); if (Math.abs(d) > 0.02) mem[o.kind] = Math.sign(d); o.pending = false; }
+        else o.pending = true;   // decide a few frames later (the slash is still fading in); meanwhile the last swing of this kind says
+        want = mem[o.kind] || 0;
+      }
+      if (!want) return;
+      o.dir = 1; o.turnSign = 1;
+      const side = () => {   // +1 when the head is ahead of the tail along the cut
+        const k = CFG.ends, L = o.layers[0].mesh, px = CFG.pivot;
+        _h.set((k.head[0] - px[0]) / 512, (px[1] - k.head[1]) / 512, 0); _t.set((k.tail[0] - px[0]) / 512, (px[1] - k.tail[1]) / 512, 0);
+        o.holder.updateMatrixWorld(true); L.localToWorld(_h); L.localToWorld(_t); S.frame.worldToLocal(_h); S.frame.worldToLocal(_t);
+        if (c.plane === 'up') return _h.y < _t.y ? -1 : 1;
+        // angles measured from this slash's own facing (head and tail are almost opposite, so never compare them directly)
+        const fa = Math.atan2(-Math.sin(o.vf), -Math.cos(o.vf));
+        return Math.sign(H.angDiff(Math.atan2(_h.x, _h.z), fa) - H.angDiff(Math.atan2(_t.x, _t.z), fa)) || 1;
+      };
+      o.t = 0; R.slashFx.pose(o);
+      if (side() !== want) { o.dir = -1; R.slashFx.pose(o); }
+      // the small turn over the slash's life should also run with the blade
+      if (c.turn && c.plane !== 'up') {
+        const k = CFG.ends, L = o.layers[0].mesh, px = CFG.pivot, hx = (k.head[0] - px[0]) / 512, hy = (px[1] - k.head[1]) / 512;
+        const headAng = () => { _h.set(hx, hy, 0); o.holder.updateMatrixWorld(true); L.localToWorld(_h); S.frame.worldToLocal(_h); return Math.atan2(_h.x, _h.z); };
+        const a0 = headAng(); o.t = o.life; R.slashFx.pose(o); const a1 = headAng(); o.t = 0;
+        if (Math.sign(H.angDiff(a1, a0)) !== want) o.turnSign = -1;
       }
     },
     pose(o) {
@@ -148,7 +201,7 @@
       const out = o.t < CFG.fadeOutAt ? 1 : Math.pow(Math.max(0, 1 - (o.t - CFG.fadeOutAt) / (CFG.life - CFG.fadeOutAt)), 1.2);
       for (const L of o.layers) {
         L.mesh.scale.set(s * o.dir, s * (c.stretch || 1), 1);
-        L.mesh.rotation.z = (c.spin + c.turn * (e - 0.5)) * o.dir;
+        L.mesh.rotation.z = (c.spin + c.turn * (e - 0.5) * (o.turnSign || 1)) * o.dir;
         const inK = Math.max(0, Math.min(1, (o.t - L.at) / CFG.fadeIn));
         L.mat.opacity = CFG.opacity * inK * out;
         L.mesh.visible = L.mat.opacity > 0.003;
