@@ -6,13 +6,17 @@
      layer in the light's own colour
    3 line art: ink where depth or surface direction breaks, and a dark terminator stroke where light turns to shadow
    4 effects on top: fires, cracks, runes, particles and their glow
+   5 painted overlays (meshes with userData.overlay, e.g. Theron's sword slash): drawn with their real alpha into
+     their own target, depth-tested against the scene, and laid over the finished picture like a painted layer.
+     The effects of pass 4 are ADDED to the picture, which turns a painting into a glow (dark strokes vanish,
+     everything goes white); overlays keep their strokes, dark accents and sharp ends.
    Nothing here touches the game: it only changes how R.render draws the frame. */
 (function () {
   const R = H.R;
   const P = R.paint = {};
-  let ready = false, rtLit, rtAlb, rtNrm, rtFx, rtShade, quadScene, shadeScene, quadCam, U, nrmMat, nrmSk, black, blackSk;
+  let ready = false, rtLit, rtAlb, rtNrm, rtFx, rtShade, rtOver, quadScene, shadeScene, quadCam, U, nrmMat, nrmSk, black, blackSk;
   const albCache = new WeakMap(), fxCache = new WeakMap();
-  const solids = [], fx = [], fxVis = [];
+  const solids = [], fx = [], fxVis = [], over = [], overVis = [];
 
   P.enabled = () => H.settings.look === 'painted' && H.settings.quality !== 'low';
 
@@ -20,16 +24,18 @@
     const THREE = window.THREE;
     const mkRT = depth => { const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }); if (depth) { rt.depthTexture = new THREE.DepthTexture(1, 1); rt.depthTexture.type = THREE.UnsignedIntType; } return rt; };
     rtLit = mkRT(true); rtAlb = mkRT(false); rtNrm = mkRT(false); rtFx = mkRT(false); rtShade = mkRT(false);
+    // overlays share the lit pass's depth (solids only), so walls, floor and the hero still hide what is behind them
+    rtOver = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }); rtOver.depthTexture = rtLit.depthTexture;
     nrmMat = new THREE.MeshNormalMaterial(); nrmSk = new THREE.MeshNormalMaterial({ skinning: true }); black = new THREE.MeshBasicMaterial({ color: 0x000000 }); blackSk = new THREE.MeshBasicMaterial({ color: 0x000000, skinning: true });
     quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     U = {
-      tLit: { value: rtLit.texture }, tAlb: { value: rtAlb.texture }, tNrm: { value: rtNrm.texture }, tFx: { value: rtFx.texture }, tDepth: { value: rtLit.depthTexture }, tShade: { value: rtShade.texture },
-      uPx: { value: new THREE.Vector2(1, 1) }, uNear: { value: 0.5 }, uFar: { value: 200 }, uHalf: { value: new THREE.Vector2(10, 10) }, uOrtho: { value: 1 }, uMode: { value: 0 }, uSheen: { value: 0.6 },
+      tLit: { value: rtLit.texture }, tAlb: { value: rtAlb.texture }, tNrm: { value: rtNrm.texture }, tFx: { value: rtFx.texture }, tOver: { value: rtOver.texture }, tDepth: { value: rtLit.depthTexture }, tShade: { value: rtShade.texture },
+      uPx: { value: new THREE.Vector2(1, 1) }, uNear: { value: 0.5 }, uFar: { value: 200 }, uHalf: { value: new THREE.Vector2(10, 10) }, uOrtho: { value: 1 }, uMode: { value: 0 }, uSheen: { value: 0.6 }, uOverOn: { value: 0 },
       uShadowTint: { value: new THREE.Color(0x3c4a58) }, uTermTint: { value: new THREE.Color(0x24503e) }, uInk: { value: new THREE.Color(0x070b0a) }, uExposure: { value: 0.72 }, uSky: { value: new THREE.Color(0x0a1210) }
     };
     const vert = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
     const frag = `
-      uniform sampler2D tLit, tAlb, tNrm, tFx, tDepth, tShade; uniform vec2 uPx, uHalf; uniform float uNear, uFar, uExposure, uOrtho; uniform int uMode; uniform float uSheen;
+      uniform sampler2D tLit, tAlb, tNrm, tFx, tDepth, tShade, tOver; uniform vec2 uPx, uHalf; uniform float uNear, uFar, uExposure, uOrtho; uniform int uMode; uniform float uSheen, uOverOn;
       uniform vec3 uShadowTint, uTermTint, uInk, uSky; varying vec2 vUv;
       float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
       float viewZ(vec2 uv) { float d = texture2D(tDepth, uv).x;
@@ -91,7 +97,11 @@
         else if (uMode == 3) outc = mix(vec3(0.92, 0.9, 0.86), uInk, ink);
         else outc = col + fxc * 0.75 + glow * 0.3;
         if (sky) outc = uSky + fxc * 0.6 + glow * 0.25;
-        gl_FragColor = vec4(pow(aces(outc * uExposure), vec3(1.0 / 2.2)), 1.0);
+        vec3 shown = pow(aces(outc * uExposure), vec3(1.0 / 2.2));
+        // painted overlays: premultiplied colour (normal blending into a cleared target), laid over the toned picture
+        vec4 ov = uOverOn > 0.5 ? texture2D(tOver, uv) : vec4(0.0);
+        if (ov.a > 0.002) shown = mix(shown, pow(clamp(ov.rgb / ov.a, 0.0, 1.0), vec3(1.0 / 2.2)), clamp(ov.a, 0.0, 1.0));
+        gl_FragColor = vec4(shown, 1.0);
       }`;
     quadScene = new THREE.Scene(); quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ uniforms: U, vertexShader: vert, fragmentShader: frag, depthTest: false, depthWrite: false, toneMapped: false })));
     // light ratio (lit / base colour), softened, at half resolution
@@ -120,8 +130,9 @@
   };
   const opaque = m => m && !m.transparent && m.blending === THREE.NormalBlending && !m.isShaderMaterial && !m.isPointsMaterial && !m.isSpriteMaterial;
   function classify(scene) {
-    solids.length = 0; fx.length = 0;
+    solids.length = 0; fx.length = 0; over.length = 0;
     scene.traverseVisible(o => {
+      if (o.userData.overlay) { over.push(o); return; }
       if (o.isSprite || o.isPoints || o.isLine) { fx.push(o); return; }
       if (!o.isMesh) return;
       const ms = Array.isArray(o.material) ? o.material : [o.material];
@@ -132,13 +143,14 @@
   const unswap = () => { for (const o of solids) { o.material = o.userData._pm; o.userData._pm = null; } };
   const hideFx = () => { fxVis.length = 0; for (const o of fx) { fxVis.push(o.visible); o.visible = false; } };
   const showFx = () => { fx.forEach((o, i) => { o.visible = fxVis[i]; }); };
+  const setVis = (list, v) => { for (const o of list) o.visible = v; };
 
   P.setMode = m => { if (U) U.uMode.value = m; };
   P.render = function () {
     const THREE = window.THREE, renderer = R.renderer, scene = R.scene, cam = R.camera;
     if (!ready) init();
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-    if (rtLit.width !== size.x || rtLit.height !== size.y) { for (const rt of [rtLit, rtAlb, rtNrm, rtFx]) rt.setSize(size.x, size.y); rtShade.setSize(Math.ceil(size.x / 2), Math.ceil(size.y / 2)); }
+    if (rtLit.width !== size.x || rtLit.height !== size.y) { for (const rt of [rtLit, rtAlb, rtNrm, rtFx, rtOver]) rt.setSize(size.x, size.y); rtShade.setSize(Math.ceil(size.x / 2), Math.ceil(size.y / 2)); }
     U.uPx.value.set(1 / size.x, 1 / size.y); U.uNear.value = cam.near; U.uFar.value = cam.far;
     if (cam.isOrthographicCamera) { U.uOrtho.value = 1; U.uHalf.value.set((cam.right - cam.left) / 2 / cam.zoom, (cam.top - cam.bottom) / 2 / cam.zoom); }
     else { U.uOrtho.value = 0; const t = Math.tan(cam.fov * Math.PI / 360); U.uHalf.value.set(t * cam.aspect, t); }
@@ -146,6 +158,8 @@
     if (scene.background && scene.background.isColor) U.uSky.value.copy(scene.background).multiplyScalar(0.6);
     classify(scene);
     const bg = scene.background, auto = renderer.shadowMap.autoUpdate;
+    // overlays stay out of passes 1–4
+    setVis(over, false);
     // 1 lit: solids only, with shadows
     hideFx(); renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
     renderer.setRenderTarget(rtLit); renderer.render(scene, cam);
@@ -155,6 +169,14 @@
     swap(mt => (mt && mt.skinning ? nrmSk : nrmMat)); scene.background = null; renderer.setClearColor(0x8080ff, 1); renderer.setRenderTarget(rtNrm); renderer.render(scene, cam); unswap();   // per object, so animated (skinned) models bend in this pass too
     // 4 effects: glowing surfaces + sprites, particles, telegraphs, flames
     renderer.setClearColor(0x000000, 1); swap(fxOf); showFx(); renderer.setRenderTarget(rtFx); renderer.render(scene, cam); unswap();
+    // 5 painted overlays, alone, against the depth of pass 1 (the depth is kept: only colour is cleared)
+    //   (skipped entirely, clear included, on frames without any overlay)
+    U.uOverOn.value = over.length ? 1 : 0;
+    if (over.length) {
+      const ac = renderer.autoClear; renderer.setRenderTarget(rtOver); renderer.setClearColor(0x000000, 0); renderer.clear(true, false, false);
+      renderer.autoClear = false; setVis(solids, false); setVis(fx, false); setVis(over, true); renderer.render(scene, cam); setVis(solids, true); showFx(); renderer.autoClear = ac;
+      renderer.setClearColor(0x000000, 1);
+    }
     scene.background = bg; renderer.shadowMap.autoUpdate = auto;
     // compose
     renderer.setRenderTarget(rtShade); renderer.render(shadeScene, quadCam);

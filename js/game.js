@@ -1935,7 +1935,7 @@ G.divineCall = function (p, greater) {
 G.paintedSlash = (p, def) => !!(def && def.weapon && H.R && H.R.slashFx && H.R.slashFx.active(p.charId, def.weapon));
 G.comboHit = function (p, def, st, hd) {
   const dmg = Math.round(st.dmg * hd.dmgMul);
-  p.anim.castSide = 1; p.anim.swing = hd.swing; p.anim.swingN++; p.anim.arcN = p.anim.swingN; p.anim.arc = hd.arc; p.anim.rate = hd.rate || 0;   // rate: swing speed for this hit (0 = the swing's own) if (hd.big) p.anim.bigN = p.anim.swingN;
+  p.anim.castSide = 1; p.anim.swing = hd.swing; p.anim.swingN++; p.anim.arcN = p.anim.swingN; p.anim.arc = hd.arc; p.anim.rate = hd.rate || 0; p.anim.hitN = p.anim.swingN;   // view only: this swing is a combo hit (picks the slash style)   // rate: swing speed for this hit (0 = the swing's own) if (hd.big) p.anim.bigN = p.anim.swingN;
   p.casting = Math.max(p.casting, hd.delay + 0.08); p.aimHoldT = Math.max(p.aimHoldT || 0, hd.delay + 0.3);
   H.audio.play(hd.shape === 'line' ? 'sword_thrust' : 'sword_swish');
   const ax = p.aimDX, az = p.aimDZ;
