@@ -197,12 +197,58 @@ G.genMap = function (depth) {
    laid as 2×2 m blocks around the outline (render.js). bounds = the box around all of it. */
 G.ROOM = { scale: 1.5, overlap: 2 };
 G.inRect = (q, x, z, r) => x >= q.minX + r && x <= q.maxX - r && z >= q.minZ + r && z <= q.maxZ - r;
-G.inRoom = function (x, z, r = 0, room = G.room) { if (!room) return true; for (const q of room.rects || [room.bounds]) if (G.inRect(q, x, z, r)) return true; return false; };
+// "inside with a margin r" must hold for the room as a whole, not for one rectangle at a time: where an annex meets
+// the hall, a point in the 2 m overlap is close to the edge of BOTH rectangles but far from any real wall (the opening).
+// So for r > 0 the margin is measured to the actual outline (G.roomWalls); r ≤ 0 keeps the simple per-rectangle test.
+G.inRoom = function (x, z, r = 0, room = G.room) {
+  if (!room) return true;
+  const rects = room.rects || [room.bounds];
+  for (const q of rects) if (G.inRect(q, x, z, r)) return true;
+  if (r <= 0 || rects.length < 2) return false;
+  let inside = false; for (const q of rects) if (G.inRect(q, x, z, 0)) { inside = true; break; }
+  return inside && G.wallDist(x, z, room) >= r;
+};
+// the outline's wall segments: every rectangle edge minus the stretches that run through the inside of another rectangle
+G.roomWalls = function (room) {
+  const rects = room.rects || [room.bounds];
+  if (room._walls && room._wallsOf === rects) return room._walls;
+  const W = [];
+  const cut = (span, holes) => { let parts = [span]; for (const [h0, h1] of holes) { const nx = []; for (const [a, b] of parts) { if (h1 <= a || h0 >= b) { nx.push([a, b]); continue; } if (h0 > a) nx.push([a, h0]); if (h1 < b) nx.push([h1, b]); } parts = nx; } return parts; };
+  for (const q of rects) {
+    for (const x of [q.minX, q.maxX]) { const holes = rects.filter(o => o !== q && o.minX < x && x < o.maxX).map(o => [o.minZ, o.maxZ]); for (const [a, b] of cut([q.minZ, q.maxZ], holes)) if (b - a > 1e-6) W.push({ v: true, c: x, a, b }); }
+    for (const z of [q.minZ, q.maxZ]) { const holes = rects.filter(o => o !== q && o.minZ < z && z < o.maxZ).map(o => [o.minX, o.maxX]); for (const [a, b] of cut([q.minX, q.maxX], holes)) if (b - a > 1e-6) W.push({ v: false, c: z, a, b }); }
+  }
+  room._walls = W; room._wallsOf = rects;
+  return W;
+};
+// distance from (x, z) to the nearest wall of the outline; out = the nearest wall point (optional)
+G.wallDist = function (x, z, room = G.room, out) {
+  let bd = 1e18, bx = x, bz = z;
+  for (const w of G.roomWalls(room)) {
+    const px = w.v ? w.c : H.clamp(x, w.a, w.b), pz = w.v ? H.clamp(z, w.a, w.b) : w.c, d = (px - x) ** 2 + (pz - z) ** 2;
+    if (d < bd) { bd = d; bx = px; bz = pz; }
+  }
+  if (out) { out.x = bx; out.z = bz; }
+  return Math.sqrt(bd);
+};
 // nearest point inside the walkable area (keeping r from the walls)
 G.clampToRoom = function (x, z, r = 0, room = G.room) {
   if (!room || G.inRoom(x, z, r, room)) return { x, z };
   let best = null, bd = 1e9;
-  for (const q of room.rects || [room.bounds]) { const cx = H.clamp(x, q.minX + r, q.maxX - r), cz = H.clamp(z, q.minZ + r, q.maxZ - r), d = (cx - x) ** 2 + (cz - z) ** 2; if (d < bd) { bd = d; best = { x: cx, z: cz }; } }
+  const rects = room.rects || [room.bounds];
+  for (const q of rects) { const cx = H.clamp(x, q.minX + r, q.maxX - r), cz = H.clamp(z, q.minZ + r, q.maxZ - r), d = (cx - x) ** 2 + (cz - z) ** 2; if (d < bd) { bd = d; best = { x: cx, z: cz }; } }
+  // inside the outline but too close to a wall (e.g. in the opening between hall and annex): step straight off the wall,
+  // which is shorter than snapping into one rectangle and keeps the opening passable
+  if (r > 0 && rects.length > 1 && G.inRoom(x, z, 0, room)) {
+    const w = G._wp || (G._wp = { x: 0, z: 0 }); let cx = x, cz = z;
+    for (let k = 0; k < 4; k++) {
+      const d = G.wallDist(cx, cz, room, w); if (d >= r - 1e-6) break;
+      const nx = d > 1e-6 ? (cx - w.x) / d : 0, nz = d > 1e-6 ? (cz - w.z) / d : 0; if (!nx && !nz) break;
+      cx = w.x + nx * r; cz = w.z + nz * r;
+    }
+    const d = (cx - x) ** 2 + (cz - z) ** 2;
+    if (d < bd && G.inRoom(cx, cz, 0, room) && G.wallDist(cx, cz, room) >= r - 1e-3) best = { x: cx, z: cz };
+  }
   return best;
 };
 G.makeRoomLayout = function (type, rng, opts = {}) {
