@@ -63,7 +63,7 @@ R.init = function (canvas) {
   R.ready = true;
   R.loadWeaponModels();
   // marble and rock are shared by every room: prepare them while the menu is up, so no room stalls building them
-  setTimeout(() => { try { if (H.settings.look !== 'classic') { R.rockTextures(); R.mixFloorMaterial(); R.marbleTextures('beige'); setTimeout(() => R.marbleTextures('grey'), 300); } } catch (e) { /* built on demand instead */ } }, 1200);
+  setTimeout(() => { try { if (H.settings.look !== 'classic') { R.rockTextures(); R.mixFloorMaterial(); R.pillarMats(); R.marbleTextures('beige'); setTimeout(() => R.marbleTextures('grey'), 300); } } catch (e) { /* built on demand instead */ } }, 1200);
 };
 R.applyQuality = function () {
   const q = H.settings.quality;
@@ -654,6 +654,56 @@ R.mixFloorMaterial = function (tint) {
   const T = R._mixTex, c = new THREE.Color(0xffffff).lerp(tint || new THREE.Color(0xffffff), 0.12);
   return new THREE.MeshStandardMaterial({ color: c, map: T.map, normalMap: T.normal, normalScale: new THREE.Vector2(R.MAT.mix.normal, R.MAT.mix.normal), roughnessMap: T.rough, roughness: 1, metalness: 0 });
 };
+/* ---- Columns: a black-rock base, cracked-rock drums with a gold block, a black-rock capital on top ----
+   Black rock, rock 06 and rock face 03 are CC0 scans (public/textures/pillar/, 512 px); the gold is a polished metal.
+   Several models (PILLAR_MODELS: the order of the middle blocks, from the bottom up); paired columns share one. */
+R.PILLAR_MODELS = [
+  ['face03', 'rock06', 'gold'],              // the sketch: two cracked drums, gold under the capital
+  ['rock06', 'gold', 'face03'],              // gold in the middle
+  ['face03', 'rock06', 'face03', 'gold'],    // tall: three drums
+  ['gold', 'rock06', 'face03']               // gold low, just above the base
+];
+R.pillarMats = function () {
+  if (R._pillarMats) return R._pillarMats;
+  const THREE = T3(), L = new THREE.TextureLoader(), d = 'public/textures/pillar/', an = Math.min(8, R.renderer.capabilities.getMaxAnisotropy());
+  const ld = (f, srgb) => { const t = L.load(d + f); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = an; if (srgb) t.encoding = THREE.sRGBEncoding; return t; };
+  const rock = (n, col, k) => { const m = new THREE.MeshStandardMaterial({ color: col, map: ld(n + '_diff.jpg', true), normalMap: ld(n + '_nor.jpg'), normalScale: new THREE.Vector2(k, k), roughnessMap: ld(n + '_rough.jpg'), roughness: 1, metalness: 0 }); m.shared = true; return m; };
+  // polished gold: metallic enough to catch the light, with some diffuse left so it still reads as gold in the painted look
+  const gold = new THREE.MeshStandardMaterial({ color: 0x8c6216, metalness: 0.8, roughness: 0.28 }); R.metalize(gold, 1.15); gold.shared = true;
+  return (R._pillarMats = { black: rock('black', 0xb8b8b8, 1.1), rock06: rock('rock06', 0x9c9488, 1.0), face03: rock('face03', 0xa29a8e, 1.0), gold });
+};
+// a drum with UVs in metres (u around, v up; one repeat every `size` m) and its own random offset, so drums never match
+R.drumGeo = function (rTop, rBot, h, size, rnd) {
+  const g = new (T3().CylinderGeometry)(rTop, rBot, h, 8, 1), U = g.attributes.uv, circ = Math.PI * (rTop + rBot), ou = rnd(), ov = rnd();
+  for (let i = 0; i < U.count; i++) U.setXY(i, U.getX(i) * circ / size + ou, U.getY(i) * h / size + ov);
+  U.needsUpdate = true; return g;
+};
+R.buildBlockPillar = function (p, theme) {
+  const THREE = T3(), M = R.pillarMats(), rnd = R.drand, oct = rr => rr / ((1 + Math.cos(Math.PI / 8)) / 2);
+  const g = new THREE.Group();
+  // paired columns (mirrored across the hall) get the same model
+  const model = R.PILLAR_MODELS[Math.abs(Math.round(Math.abs(p.x) * 7 + p.z * 13)) % R.PILLAR_MODELS.length];
+  const add = (geo, mat, y) => { const m = new THREE.Mesh(geo, mat); m.position.y = y; m.rotation.y = (rnd() - 0.5) * 0.25; m.castShadow = m.receiveShadow = true; g.add(m); return m; };
+  // base: black rock, wider, two steps
+  add(R.drumGeo(oct(p.r * 1.12), oct(p.r * 1.2), 0.32, 1.6, rnd), M.black, 0.06);
+  add(R.drumGeo(oct(p.r * 1.02), oct(p.r * 1.06), 0.42, 1.6, rnd), M.black, 0.43);
+  let y = 0.64;
+  for (const k of model) {
+    const isGold = k === 'gold', hh = isGold ? 0.42 + rnd() * 0.12 : 0.8 + rnd() * 0.35, rr = p.r * (isGold ? 1.04 : 0.95 + rnd() * 0.05);
+    add(R.drumGeo(oct(rr), oct(rr), hh, isGold ? 3 : 1.6, rnd), M[k], y + hh / 2);
+    if (isGold) { add(R.drumGeo(oct(rr * 1.05), oct(rr * 1.05), 0.06, 3, rnd), M.gold, y + 0.03); add(R.drumGeo(oct(rr * 1.05), oct(rr * 1.05), 0.06, 3, rnd), M.gold, y + hh - 0.03); }   // rims
+    y += hh + 0.02;
+  }
+  // capital: black rock, flaring outward (the support), and a thin slab on top
+  add(R.drumGeo(oct(p.r * 1.24), oct(p.r * 0.98), 0.5, 1.6, rnd), M.black, y + 0.25); y += 0.5;
+  add(R.drumGeo(oct(p.r * 1.3), oct(p.r * 1.3), 0.16, 1.6, rnd), M.black, y + 0.08); y += 0.16;
+  // the depth's magic stays: a cluster of glowing crystals on top
+  const crysM = R.mat('crystal_' + theme.rune, () => new THREE.MeshBasicMaterial({ color: theme.rune, toneMapped: false }));
+  for (let k = 0; k < 5; k++) { const cr = new THREE.Mesh(new THREE.ConeGeometry(0.1 + rnd() * 0.1, 0.5 + rnd() * 0.7, 5), crysM); cr.position.set((rnd() - .5) * p.r, y + 0.25, (rnd() - .5) * p.r); cr.rotation.set((rnd() - .5) * 0.8, 0, (rnd() - .5) * 0.8); g.add(cr); }
+  const cg = R.glowSprite(theme.rune, 2.4); cg.position.y = y + 0.6; cg.material.opacity = 0.35; g.add(cg);
+  g.rotation.y = rnd() * Math.PI / 4;
+  g.position.set(p.x, 0, p.z); R.chamber.add(g); g.userData = { pillar: true, x: p.x, z: p.z, r: p.r, h: y, fade: 1, model: model.join('-') };
+};
 R.wallMaterial = function (tint) {
   if (H.settings.look !== 'classic') {
     // rock walls: colour, OpenGL normal and roughness from the CC0 scan; the depth's tint stays light so the rock reads
@@ -780,6 +830,7 @@ R.buildChamber = function (room, theme) {
   // height, overhangs.
   const oct = rr => rr / ((1 + Math.cos(Math.PI / 8)) / 2);   // circumradius whose mean edge sits at rr
   for (const p of room.pillars) {
+    if (H.settings.look !== 'classic') { R.buildBlockPillar(p, theme); continue; }
     const g = new THREE.Group();
     const h = 3.4 + R.drand() * 1.4;
     const plinth = new THREE.Mesh(new THREE.CylinderGeometry(oct(p.r * 1.0), oct(p.r * 1.02), 0.4, 8), blockMats[0]); plinth.position.y = -0.1; plinth.castShadow = plinth.receiveShadow = true; g.add(plinth);

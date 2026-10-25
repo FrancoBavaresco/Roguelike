@@ -39,4 +39,6 @@ La espada está modificada (texturas reducidas a 512 px y empaquetadas en GLB; e
 
 | Piso de piedra mezclado | `public/textures/floor_mix/` (16×16 m, generado con `tools/floor_mix.py`) | "grey_cartago_01", "rock_06" y "rock_face_03" de [Poly Haven](https://polyhaven.com) | CC0 (dominio público) |
 
+| Columnas (roca negra y rocas agrietadas) | `public/textures/pillar/` (512 px) | "dark_rock", "rock_06" y "rock_face_03" de [Poly Haven](https://polyhaven.com) | CC0 (dominio público) |
+
 El mármol de los pisos no es un archivo: se genera por código (`R.marbleTextures` en `js/render.js`).
