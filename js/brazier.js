@@ -9,12 +9,18 @@
 
    Fire: the sketch's own flames (tools/brazier_sprites.py → public/textures/fx/brazier/flame_A/B/C.png) on a card
    that faces the camera, its foot on the coals, so the front rim hides the base and the fire comes out of the cup.
-   It moves: a small shader bend (the tips sway more than the base, a lick travelling up the flame), the height
-   breathing on two out-of-step waves, a mirrored second copy fading in and out so the shape keeps changing, and a
-   slow pulse (CFG.states[].pulse/period) that makes the flame grow and shrink, melting into the next drawing (alt) at
-   its peak. Flakes and glowing embers (the atlas's 5th row) come from one fixed pool.
-   A soft glow sits on the coals, and fragments painted in the sketch (green and white flakes, sparks.png) rise and
-   fade from the bigger fires; all fragments share one draw call. The colour turns from the painted green to the
+   Layers, back to front, all from the same drawings: a mirrored copy fading in and out, the next drawing (alt)
+   melted in a little at the slow pulse's peak, the main drawing (dominant), its bright heart (core: only the light
+   centre of the drawing, smaller, on its own rhythm), and a few tongues (the top of the drawing on small cards) that
+   break off, rise, stretch thin and fade. Each layer has its own speed and phase.
+   The shader moves the paint without redrawing it: the tips sway more than the foot, licks travel up the flame, and
+   a moving noise across the width makes single tongues reach up or sink (the card has room above the drawing for
+   that), so the silhouette never deforms as one piece; a faint light/dark drift moves up through the paint.
+   The height breathes on two out-of-step waves over a slow pulse (CFG.states[].pulse/period: the flame grows and
+   shrinks). Each brazier runs on its own clock (CFG.speedVar) and phase, so no two are in step.
+   Particles, born inside the flame and capped per brazier and in total (one fixed pool, one draw call): painted
+   flakes (green and white, sparks.png), small embers (the atlas's 5th row) and brief twinkling flashes; each has its
+   own life, rise, wobble and fade. A soft glow sits on the coals. The colour turns from the painted green to the
    depth's own fire colour (theme.rune) by a hue shift.
 
    Three states, same cup (CFG.states): A small steady flame, faint light, no fragments; B medium flame, livelier,
@@ -25,7 +31,8 @@
    Lights: the existing fixed pool of two point lights (no shader recompiles between rooms) serves the first two
    braziers, at the fire's height, with the state's intensity and flicker; there is no extra light.
    Resources: geometries, the cup's materials and the textures are shared and kept between rooms; each brazier has
-   its own two flame materials (their uniforms), freed with the room. Nothing is created per frame. */
+   its own flame materials (their uniforms: 4 layers and CFG.tipsPer tongues), freed with the room. Nothing is created
+   per frame. */
 (function () {
   const R = H.R;
   const CFG = R.brazierCfg = {
@@ -38,19 +45,26 @@
     state: 'B',             // default state
     byRoom: { rest: 'A', shrine: 'A', merchant: 'A', treasure: 'A', mystery: 'A', elite: 'C', warden: 'C', arena: 'C', challenge: 'C' },
     states: {
-      // tex: flame drawing; breathe: quick height wobble; sway (m) / lick (uv): the bend and the ripple up the flame;
-      // mirror: the mirrored copy's peak opacity; pulse: the slow grow/shrink (±, of the height) over period (s); alt: the
-      // drawing it melts into at the pulse's peak (altAt 1) or trough (altAt -1); light: [painted, classic];
-      // sparks / embers: flakes and glowing embers per second; rise (m) and life (s) of the flakes
-      A: { tex: 'A', scale: 1.0, breathe: 0.05, sway: 0.03, lick: 0.014, mirror: 0.2, pulse: 0.15, period: 3.4, alt: 'B', altAt: 1, glow: 0.9, light: [1.2, 0.7], flicker: 0.07, sparks: 0.4, embers: 1.5, rise: 0.6, life: 0.8, dish: 0.14 },
-      B: { tex: 'B', scale: 1.0, breathe: 0.07, sway: 0.05, lick: 0.02, mirror: 0.26, pulse: 0.18, period: 3.0, alt: 'C', altAt: 1, glow: 1.2, light: [1.9, 1.1], flicker: 0.11, sparks: 3, embers: 4, rise: 1.0, life: 1.0, dish: 0.22 },
-      C: { tex: 'C', scale: 1.0, breathe: 0.09, sway: 0.07, lick: 0.026, mirror: 0.3, pulse: 0.2, period: 2.6, alt: 'B', altAt: -1, glow: 1.5, light: [2.6, 1.5], flicker: 0.15, sparks: 8, embers: 9, rise: 1.7, life: 1.2, dish: 0.32 }
+      // tex: flame drawing; breathe: quick height wobble; sway (sketch-px-scaled m) / lick (uv): the bend and the ripple
+      // up the flame; tongue: how far single tongues stretch up on their own (uv, by a moving noise across the width);
+      // mirror: the mirrored copy's peak opacity; core: the inner flame layer's opacity; pulse: the slow grow/shrink (±,
+      // of the height) over period (s); alt/altAt/altMax: the drawing it melts into at the pulse's peak (1) or trough
+      // (-1), and how much; tips: tongues per second that break off the top, rise (tipRise m) and fade; light: [painted,
+      // classic]; sparks / embers / flashes: per second; rise (m) and life (s) of the flakes
+      A: { tex: 'A', scale: 1.0, breathe: 0.05, sway: 0.03, lick: 0.014, tongue: 0.16, mirror: 0.16, core: 0.35, pulse: 0.12, period: 3.4, alt: 'B', altAt: 1, altMax: 0.35, tips: 0.7, tipRise: 0.22, glow: 0.85, light: [1.2, 0.7], flicker: 0.07, sparks: 0.3, embers: 1.2, flashes: 0.6, rise: 0.6, life: 0.8, dish: 0.14 },
+      B: { tex: 'B', scale: 1.0, breathe: 0.06, sway: 0.045, lick: 0.018, tongue: 0.2, mirror: 0.2, core: 0.38, pulse: 0.14, period: 3.0, alt: 'C', altAt: 1, altMax: 0.35, tips: 1.1, tipRise: 0.3, glow: 1.1, light: [1.9, 1.1], flicker: 0.1, sparks: 1.2, embers: 2.5, flashes: 1.2, rise: 0.9, life: 1.0, dish: 0.22 },
+      C: { tex: 'C', scale: 1.0, breathe: 0.07, sway: 0.06, lick: 0.022, tongue: 0.24, mirror: 0.22, core: 0.4, pulse: 0.15, period: 2.6, alt: 'B', altAt: -1, altMax: 0.25, tips: 1.6, tipRise: 0.4, glow: 1.35, light: [2.6, 1.5], flicker: 0.14, sparks: 2.5, embers: 4, flashes: 2, rise: 1.4, life: 1.1, dish: 0.32 }
     },
-    sparkMax: 180,          // fragments alive at once, all braziers together (a fixed pool)
-    sparkSize: [0.11, 0.2], // m (painted flakes)
-    emberSize: [0.05, 0.1], // m (embers)
+    speedVar: 0.12,         // each brazier runs its fire this much faster or slower (±), so no two are in step
+    tipsPer: 3,             // tongue cards per brazier (a fixed set, reused)
+    sparkMax: 160,          // fragments alive at once, all braziers together (a fixed pool)
+    perBrazier: 26,         // ...and per brazier
+    sparkSize: [0.07, 0.12],   // m (painted flakes)
+    emberSize: [0.035, 0.07],  // m (embers and flashes)
+    // the flame cards have room round the drawing (in drawing widths/heights) for the tongues to stretch into
+    pad: { x: 0.12, top: 0.32 },
     // sketch frames (from brazier.json): crop size and the flame's foot (px)
-    flames: { A: { w: 50, h: 62, pivot: [23, 68] }, B: { w: 77, h: 79, pivot: [32, 81] }, C: { w: 111, h: 128, pivot: [59, 126] } },
+    flames: { A: { w: 48, h: 61, pivot: [22, 68] }, B: { w: 75, h: 78, pivot: [31, 81] }, C: { w: 109, h: 127, pivot: [58, 126] } },
     paintedHue: 0.36        // hue of the painted green (0–1); the fire is turned to the depth's colour from it
   };
 
@@ -79,11 +93,19 @@
     const ring = (r, t, y) => { const g = new THREE.TorusGeometry(r, t, 6, 32); g.rotateX(Math.PI / 2); g.translate(0, y, 0); return mk(g); };
     const lip = ring(0.672, 0.024, 0.985), seam = ring(0.628, 0.018, 0.8), pedRing = ring(0.2, 0.022, 0.27), baseRing = ring(0.35, 0.018, 0.165);
     const rivet = mk(new THREE.IcosahedronGeometry(0.024, 0));
-    const plane = {}; for (const k of ['A', 'B', 'C']) { const F = CFG.flames[k], g = new THREE.PlaneGeometry(F.w, F.h); g.translate(F.w / 2 - F.pivot[0], F.pivot[1] - F.h / 2, 0); plane[k] = mk(g); }
+    // flame cards in sketch px, foot at the origin, with room round the drawing (uv outside 0–1 is empty unless a
+    // tongue stretches into it); and per drawing a few tip pieces (the top of the flame, in uv) for the tongues that
+    // break off
+    const card = (F, u0, u1, v0, v1, ox, oy) => { const g = new THREE.PlaneGeometry(1, 1), P = g.attributes.position, U = g.attributes.uv;
+      for (let i = 0; i < P.count; i++) { const u = U.getX(i) ? u1 : u0, v = U.getY(i) ? v1 : v0; U.setXY(i, u, v); P.setXYZ(i, u * F.w - F.pivot[0] - ox, F.pivot[1] - F.h + v * F.h - oy, 0); }
+      return mk(g); };
+    const plane = {}, tips = {};
+    for (const k of ['A', 'B', 'C']) { const F = CFG.flames[k]; plane[k] = card(F, -CFG.pad.x, 1 + CFG.pad.x, 0, 1 + CFG.pad.top, 0, 0);
+      tips[k] = [0.3, 0.5, 0.7].map(c => { const ox = c * F.w - F.pivot[0], oy = F.pivot[1] - F.h + 0.55 * F.h; const g = card(F, c - 0.16, c + 0.16, 0.55, 1.0, ox, oy); g.userData.at = [ox, oy]; return g; }); }
     // matte like the rest of the dungeon; colours are the sketch's own (sRGB), turned linear for the renderer
     const std = (c, o) => mat(R.std(lin(c), o));
     shared = {
-      tex, sparkTex, plane,
+      tex, sparkTex, plane, tips,
       geo: { outer, rim, dish, base1, base2, ped, collar, claw, strap, stick, lip, seam, pedRing, baseRing, rivet }, cupTex,
       mat: {
         // the painted parts: the sketch's own drawing (ink lines and shading) on the 3D shape, white so the map shows as drawn
@@ -101,7 +123,7 @@
   function flameMat(tex, hue, phase) {
     const THREE = T();
     const m = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide, toneMapped: false, fog: false });
-    m.userData.u = { uTime: { value: 0 }, uSway: { value: 0.03 }, uLick: { value: 0.01 }, uPhase: { value: phase }, uHue: { value: hue } };
+    m.userData.u = { uTime: { value: 0 }, uSway: { value: 0.03 }, uLick: { value: 0.01 }, uTongue: { value: 0.15 }, uPhase: { value: phase }, uHue: { value: hue }, uCut: { value: -1 }, uCore: { value: 0 } };
     m.onBeforeCompile = flameShader;
     return m;
   }
@@ -110,16 +132,29 @@
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nuniform float uTime, uSway, uPhase;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        float hk = clamp(uv.y, 0.0, 1.0); hk *= hk;   // the tips move, the foot stays on the coals
-        transformed.x += (sin(uTime * 1.7 + uPhase) * 0.45 + sin(uTime * 3.1 + uPhase * 1.3) * 0.35 + sin(uTime * 5.3 + uPhase * 1.7) * 0.2) * uSway * hk;   // uSway in sketch px
-        transformed.y *= 1.0 + 0.06 * sin(uTime * 4.1 + uPhase * 0.9) * hk;   // the tips stretch and settle`);
+        float hk = clamp(uv.y, 0.0, 1.3); hk *= hk;   // the tips move, the foot stays on the coals
+        transformed.x += (sin(uTime * 1.7 + uPhase) * 0.45 + sin(uTime * 3.1 + uPhase * 1.3) * 0.35 + sin(uTime * 5.3 + uPhase * 1.7) * 0.2) * uSway * hk;   // uSway in sketch px`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform float uTime, uLick, uPhase, uHue;
-        vec3 hueTurn(vec3 c, float a) { const vec3 k = vec3(0.57735); float ca = cos(a), sa = sin(a); return c * ca + cross(k, c) * sa + k * dot(k, c) * (1.0 - ca); }`)
+        uniform float uTime, uLick, uTongue, uPhase, uHue, uCut, uCore;
+        vec3 hueTurn(vec3 c, float a) { const vec3 k = vec3(0.57735); float ca = cos(a), sa = sin(a); return c * ca + cross(k, c) * sa + k * dot(k, c) * (1.0 - ca); }
+        float fhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float fnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(fhash(i), fhash(i + vec2(1.0, 0.0)), f.x), mix(fhash(i + vec2(0.0, 1.0)), fhash(i + vec2(1.0, 1.0)), f.x), f.y); }`)
       .replace('#include <map_fragment>', `
-        vec2 fuv = vUv; fuv.x += (sin(fuv.y * 11.0 - uTime * 7.0 + uPhase) * 0.7 + sin(fuv.y * 23.0 - uTime * 13.0 + uPhase * 2.0) * 0.3) * uLick * fuv.y;   // licks travelling up the flame
-        vec4 texelColor = texture2D(map, fuv); texelColor = mapTexelToLinear(texelColor);
+        vec2 fuv = vUv; float hy = clamp(vUv.y, 0.0, 1.3);
+        // tongues: a noise moving across the width and in time; where it is high the column is sampled lower, so that
+        // part of the top reaches up, where it is low it sinks: the silhouette never deforms as one piece
+        float tg = fnoise(vec2(vUv.x * 5.0 + uPhase * 3.0, uTime * 1.6 + uPhase)) * 0.7 + fnoise(vec2(vUv.x * 11.0 - uPhase, uTime * 3.1)) * 0.3 - 0.42;
+        fuv.y -= tg * uTongue * hy * hy;
+        fuv.x += (sin(fuv.y * 11.0 - uTime * 7.0 + uPhase) * 0.7 + sin(fuv.y * 23.0 - uTime * 13.0 + uPhase * 2.0) * 0.3) * uLick * fuv.y;   // licks travelling up the flame
+        vec4 texelColor = texture2D(map, clamp(fuv, 0.0, 1.0)); texelColor = mapTexelToLinear(texelColor);
+        texelColor.a *= step(0.0, fuv.x) * step(fuv.x, 1.0) * step(0.0, fuv.y) * step(fuv.y, 1.0) * smoothstep(uCut, uCut + 0.14, fuv.y);
+        // inner life: a soft light/dark pattern drifting up through the paint (small, keeps the drawing's colours)
+        texelColor.rgb *= 0.9 + 0.2 * fnoise(vec2(fuv.x * 4.0 + uPhase, fuv.y * 3.0 - uTime * 2.2));
+        // the inner flame layer keeps only the drawing's bright heart
+        float lum = dot(texelColor.rgb, vec3(0.3, 0.55, 0.15));
+        texelColor.a *= mix(1.0, smoothstep(0.3, 0.62, lum), uCore);
         texelColor.rgb = hueTurn(texelColor.rgb, uHue); diffuseColor *= texelColor;`);
   }
 
@@ -145,7 +180,7 @@
     });
     const pts = new THREE.Points(g, m); pts.frustumCulled = false; pts.renderOrder = 4; m.shared = true; g.shared = true;
     // a fixed pool of records: [0, n) are alive, nothing is allocated while the game runs
-    const pool = []; for (let i = 0; i < N; i++) pool.push({ x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0, life: 1, cell: 0, size: 0.1, sway: 0, drag: 0.8 });
+    const pool = []; for (let i = 0; i < N; i++) pool.push({ x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0, life: 1, cell: 0, size: 0.1, sway: 0, drag: 0.8, wf: 4, wa: 0.1, kind: 0, b: null });
     sparks = { pts, g, m, pool, n: 0 };
     return sparks;
   }
@@ -184,14 +219,19 @@
       // the fire: a card on the coals, facing the camera, and a mirrored copy
       const st = R.brazier.stateFor(room), hue = hueTo(theme.rune), ph = R.drand() * 7;
       const fire = new THREE.Group(); fire.position.set(x, CFG.fireY * k, z); fire.userData.fire = true;
-      const mk2 = (phase, flip) => { const m = new THREE.Mesh(S.plane[CFG.states[st].tex], flameMat(S.tex[CFG.states[st].tex], hue, phase)); m.userData.overlay = true; m.renderOrder = 3; m.frustumCulled = false; if (flip) m.userData.flip = true; fire.add(m); return m; };
-      const main = mk2(ph, false), copy = mk2(ph + 2.1, true), alt = mk2(ph + 4.2, false);   // alt: the next drawing, melted in at the pulse
+      const mk2 = (phase, flip, geo) => { const m = new THREE.Mesh(geo || S.plane[CFG.states[st].tex], flameMat(S.tex[CFG.states[st].tex], hue, phase)); m.userData.overlay = true; m.renderOrder = 3; m.frustumCulled = false; if (flip) m.userData.flip = true; fire.add(m); return m; };
+      // layers, back to front: the mirrored copy, the next drawing (alt, melted in at the pulse), the main drawing,
+      // its bright heart (core, smaller, on its own rhythm), and the tongues that break off the top
+      const copy = mk2(ph + 2.1, true), alt = mk2(ph + 4.2, false), main = mk2(ph, false), core = mk2(ph + 1.3, false);
+      core.material.userData.u.uCore.value = 1;
+      const tips = []; for (let n = 0; n < CFG.tipsPer; n++) { const m = mk2(ph + 0.7 * n, false, S.tips[CFG.states[st].tex][0]); m.material.userData.u.uCut.value = 0.55; m.visible = false; tips.push({ m, t: 0, life: 1, on: false, k: 0, dx: 0 }); }
       const glow = R.glowSprite(theme.rune, 1); glow.position.y = 0.12; fire.add(glow);
       R.chamber.add(fire);
       let light = null;
       if (i < 2 && H.settings.quality !== 'low') { light = R.brazierLights[i]; light.color.setHex(theme.rune); light.distance = H.settings.look === 'classic' ? 10 : 13; const toward = room && room.main ? Math.sign(((room.main.minX + room.main.maxX) / 2) - x) || 1 : 1;   // a little into the room: it lights the floor and walls, not its own cup from up close
         light.position.set(x + toward * CFG.lightOut, CFG.lightY, z); }
-      const b = { x, z, fire, main, copy, alt, glow, dishMat, light, ph, state: st, hue, spawn: 0, ember: 0, color: theme.rune };
+      const hz = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453, rate = 1 + ((hz - Math.floor(hz)) * 2 - 1) * CFG.speedVar;   // from its place: the room's own random sequence is left untouched
+      const b = { x, z, fire, main, copy, alt, core, tips, glow, dishMat, light, ph, rate, state: st, hue, spawn: 0, ember: 0, flash: 0, tip: 0.3, alive: 0, color: theme.rune };
       R.brazier.apply(b, st);
       const sp = sparkSystem(); if (!sp.pts.parent) R.fx.add(sp.pts);
       return b;
@@ -199,7 +239,8 @@
     // switch one brazier to a state (A, B, C)
     apply(b, st) {
       const S = res(), c = CFG.states[st] || CFG.states.B; b.state = st; b.c = c;
-      for (const m of [b.main, b.copy]) { m.geometry = S.plane[c.tex]; m.material.map = S.tex[c.tex]; m.material.needsUpdate = true; }
+      for (const m of [b.main, b.copy, b.core]) { m.geometry = S.plane[c.tex]; m.material.map = S.tex[c.tex]; m.material.needsUpdate = true; }
+      for (const q of b.tips) { q.on = false; q.m.visible = false; q.m.material.map = S.tex[c.tex]; q.m.material.needsUpdate = true; }
       b.alt.geometry = S.plane[c.alt]; b.alt.material.map = S.tex[c.alt]; b.alt.material.needsUpdate = true;
       b.altK = CFG.flames[c.tex].h / CFG.flames[c.alt].h;   // the alt drawing is sized to the flame's own height
       b.dishMat.emissiveIntensity = c.dish;
@@ -208,46 +249,72 @@
     setState(st) { if (H.G.room) H.G.room.brazierState = st; for (const b of R.braziers || []) R.brazier.apply(b, st); },
     tick(dt, t) {
       const cam = R.camera, look = H.settings.look === 'classic' ? 1 : 0, list = R.braziers || [];
-      const sp = sparks;
+      const sp = sparks, S = shared;
       for (const b of list) {
         if (!b.fire) continue;
-        const c = b.c, w1 = Math.sin(t * 2.3 + b.ph), w2 = Math.sin(t * 5.7 + b.ph * 1.3), w3 = Math.sin(t * 11 + b.ph * 0.7);
+        const c = b.c, tb = t * b.rate;   // each brazier on its own clock
+        const w1 = Math.sin(tb * 2.3 + b.ph), w2 = Math.sin(tb * 5.7 + b.ph * 1.3), w3 = Math.sin(tb * 11 + b.ph * 0.7);
         // the slow pulse: the flame grows and shrinks on a smooth cycle (a sine with a little second harmonic, so it
         // rises slowly and sinks a bit quicker, like a real fire drawing breath)
-        const ph = t * 6.2832 / c.period + b.ph, e = Math.sin(ph) * 0.85 + Math.sin(ph * 2 + 0.6) * 0.15;
+        const ph = tb * 6.2832 / c.period + b.ph, e = Math.sin(ph) * 0.85 + Math.sin(ph * 2 + 0.6) * 0.15;
         const hy = (1 + c.pulse * e) * (1 + c.breathe * (0.6 * w1 + 0.4 * w2));
         const hx = (1 + c.pulse * 0.4 * e) * (1 - c.breathe * 0.4 * w1 + c.breathe * 0.2 * w3);
         const s = CFG.mpp * c.scale;
         b.fire.quaternion.copy(cam.quaternion);
         b.main.scale.set(s * hx, s * hy, 1);
-        b.copy.scale.set(-s * (2 - hx) * 0.97 * (1 + c.pulse * 0.4 * e), s * (1 + c.pulse * e) * (1 + c.breathe * 0.5 * Math.sin(t * 3.3 + b.ph + 1.5)), 1);
-        // at the pulse's peak (or trough) the next drawing melts in: the flame changes shape as it grows
-        const x = e * c.altAt, wa = x <= 0.3 ? 0 : x >= 0.95 ? 1 : ((x - 0.3) / 0.65) * ((x - 0.3) / 0.65) * (3 - 2 * (x - 0.3) / 0.65);
+        b.copy.scale.set(-s * (2 - hx) * 0.97 * (1 + c.pulse * 0.4 * e), s * (1 + c.pulse * e) * (1 + c.breathe * 0.5 * Math.sin(tb * 3.3 + b.ph + 1.5)), 1);
+        // the heart: smaller, a little lower, breathing on its own rhythm
+        const w4 = Math.sin(tb * 3.9 + b.ph * 2.1), w5 = Math.sin(tb * 7.3 + b.ph * 0.4);
+        b.core.scale.set(s * hx * (0.8 + 0.04 * w5), s * hy * (0.74 + 0.07 * w4), 1);
+        b.core.material.opacity = c.core * (0.8 + 0.2 * w5);
+        // at the pulse's peak (or trough) the next drawing melts in a little: the flame changes shape as it grows
+        const x = e * c.altAt, wa = c.altMax * (x <= 0.3 ? 0 : x >= 0.95 ? 1 : ((x - 0.3) / 0.65) * ((x - 0.3) / 0.65) * (3 - 2 * (x - 0.3) / 0.65));
         const ak = s * b.altK; b.alt.scale.set(ak * hx * (1 - 0.1 * w3), ak * hy, 1);
-        const mo = c.mirror * (0.5 + 0.5 * Math.sin(t * 1.7 + b.ph));   // the copy fades in and out: the shape keeps changing
-        b.main.material.opacity = (1 - mo * 0.5) * (1 - wa * 0.9); b.copy.material.opacity = mo * (1 - wa * 0.85); b.alt.material.opacity = wa;
+        const mo = c.mirror * (0.5 + 0.5 * Math.sin(tb * 1.7 + b.ph));   // the copy fades in and out: the shape keeps changing
+        b.main.material.opacity = (1 - mo * 0.4) * (1 - wa * 0.5); b.copy.material.opacity = mo * (1 - wa); b.alt.material.opacity = wa;
         b.alt.visible = wa > 0.001;
-        for (const m of [b.main, b.copy, b.alt]) { const u = m.material.userData.u; u.uTime.value = t; u.uSway.value = c.sway / CFG.mpp; u.uLick.value = c.lick; }
-        const f = (1 + c.flicker * (0.6 * w2 + 0.4 * w3)) * (1 + c.pulse * 0.5 * e);
-        b.glow.scale.setScalar(c.glow * f); b.glow.material.opacity = 0.55;
+        for (const m of [b.main, b.copy, b.alt]) { const u = m.material.userData.u; u.uTime.value = tb; u.uSway.value = c.sway / CFG.mpp; u.uLick.value = c.lick; u.uTongue.value = c.tongue; }
+        { const u = b.core.material.userData.u; u.uTime.value = tb * 1.3 + 3; u.uSway.value = c.sway * 0.7 / CFG.mpp; u.uLick.value = c.lick * 1.3; u.uTongue.value = c.tongue * 0.6; }
+        // tongues breaking off the top: each rises, stretches thin and fades, then waits to be used again
+        b.tip -= dt * c.tips * (0.7 + 0.6 * Math.max(0, e));
+        if (b.tip <= 0) { b.tip = 0.4 + Math.random() * 0.9; let q = null; for (const o of b.tips) if (!o.on) { q = o; break; }
+          if (q) { const k = Math.floor(Math.random() * 3); q.on = true; q.t = 0; q.life = 0.55 + Math.random() * 0.45; q.k = k; q.dx = (Math.random() - 0.5) * 0.4; q.rise = c.tipRise * (0.7 + Math.random() * 0.6);
+            q.m.geometry = S.tips[c.tex][k]; q.m.visible = true; } }
+        for (const q of b.tips) {
+          if (!q.on) continue;
+          q.t += dt; const k = q.t / q.life;
+          if (k >= 1) { q.on = false; q.m.visible = false; continue; }
+          const at = q.m.geometry.userData.at, ease = 1 - (1 - k) * (1 - k);
+          q.m.position.set(at[0] * s * hx + q.dx * ease * 0.15, at[1] * s * hy + q.rise * ease, 0.002);
+          q.m.scale.set(s * hx * (1 - 0.5 * k), s * hy * (1 + 0.8 * k), 1);
+          q.m.material.opacity = Math.min(1, k / 0.12) * (1 - k) * (1 - k) * 0.9;
+          const u = q.m.material.userData.u; u.uTime.value = tb + q.k; u.uSway.value = c.sway * 1.5 / CFG.mpp; u.uLick.value = c.lick * 1.5; u.uTongue.value = 0;
+        }
+        const f = (1 + c.flicker * (0.6 * w2 + 0.4 * w3)) * (1 + c.pulse * 0.25 * e);
+        b.glow.scale.setScalar(c.glow * f); b.glow.material.opacity = 0.45;
         b.dishMat.emissiveIntensity = c.dish * f;
         if (b.light) b.light.intensity = c.light[look] * f;
         if (!sp) continue;
-        // flakes leave the fire now and then (more when it is big), embers stream up all the time
-        const gust = 0.6 + 0.4 * (w1 * 0.5 + 0.5) + 0.5 * Math.max(0, e);
-        b.spawn = Math.min(b.spawn + dt * c.sparks * gust, 2); b.ember = Math.min(b.ember + dt * c.embers * gust, 3);
-        while (b.spawn >= 1 && sp.n < CFG.sparkMax) { b.spawn -= 1; R.brazier._emit(b, c, false); }
-        while (b.ember >= 1 && sp.n < CFG.sparkMax) { b.ember -= 1; R.brazier._emit(b, c, true); }
+        // particles: a few painted flakes, a light stream of embers and brief flashes, all born inside the flame
+        const gust = 0.6 + 0.4 * (w1 * 0.5 + 0.5) + 0.4 * Math.max(0, e);
+        b.spawn = Math.min(b.spawn + dt * c.sparks * gust, 2); b.ember = Math.min(b.ember + dt * c.embers * gust, 2); b.flash = Math.min(b.flash + dt * c.flashes * (0.5 + Math.random()), 2);
+        const cap = Math.min(CFG.sparkMax - sp.n, CFG.perBrazier - b.alive);
+        for (let n = 0; n < cap; n++) {
+          if (b.spawn >= 1) { b.spawn -= 1; R.brazier._emit(b, c, 0, hy); } else if (b.ember >= 1) { b.ember -= 1; R.brazier._emit(b, c, 1, hy); } else if (b.flash >= 1) { b.flash -= 1; R.brazier._emit(b, c, 2, hy); } else break;
+        }
       }
       if (sp) {
         const L = sp.pool, P = sp.g.attributes.position.array, C = sp.g.attributes.aCell.array, Z = sp.g.attributes.aSize.array, A = sp.g.attributes.aAlpha.array;
         let i = 0;
         while (i < sp.n) {
           const q = L[i]; q.t += dt;
-          if (q.t >= q.life) { L[i] = L[sp.n - 1]; L[sp.n - 1] = q; sp.n--; continue; }   // swap the dead one out of the live range
-          q.x += (q.vx + Math.sin(q.t * 6 + q.sway) * 0.15) * dt; q.y += q.vy * dt; q.z += (q.vz + Math.cos(q.t * 5 + q.sway) * 0.1) * dt; q.vy *= Math.exp(-dt * q.drag);
+          if (q.t >= q.life) { if (q.b) q.b.alive--; q.b = null; L[i] = L[sp.n - 1]; L[sp.n - 1] = q; sp.n--; continue; }   // swap the dead one out of the live range
+          q.x += (q.vx + Math.sin(q.t * q.wf + q.sway) * q.wa) * dt; q.y += q.vy * dt; q.z += (q.vz + Math.cos(q.t * q.wf * 0.8 + q.sway) * q.wa * 0.7) * dt; q.vy *= Math.exp(-dt * q.drag);
           const k = q.t / q.life;
-          P[i * 3] = q.x; P[i * 3 + 1] = q.y; P[i * 3 + 2] = q.z; C[i] = q.cell; Z[i] = q.size * (1 - 0.5 * k); A[i] = Math.min(1, k * 6) * (1 - k * k); i++;
+          let al = Math.min(1, k * 6) * (1 - k * k);
+          if (q.kind === 2) al = Math.sin(Math.PI * k) * (0.6 + 0.4 * Math.sin(q.t * 47 + q.sway));   // a flash: a quick twinkle
+          else if (q.kind === 1) al *= 0.8 + 0.2 * Math.sin(q.t * 19 + q.sway);
+          P[i * 3] = q.x; P[i * 3 + 1] = q.y; P[i * 3 + 2] = q.z; C[i] = q.cell; Z[i] = q.size * (q.kind === 2 ? 0.6 + 0.6 * Math.sin(Math.PI * k) : 1 - 0.5 * k); A[i] = al; i++;
         }
         for (const a of ['position', 'aCell', 'aSize', 'aAlpha']) sp.g.attributes[a].needsUpdate = true;
         sp.g.setDrawRange(0, sp.n);
@@ -257,18 +324,22 @@
         sp.m.uniforms.uScale.value = cam.isOrthographicCamera ? hpx * cam.zoom / ((cam.top - cam.bottom) / 2) : hpx * cam.projectionMatrix.elements[5] / 12;
       }
     },
-    // one fragment from a fire: a painted flake (green or white) or a small glowing ember, taken from the pool
-    _emit(b, c, ember) {
-      const sp = sparks, q = sp.pool[sp.n++], a = Math.random() * 6.283, r = Math.random() * (ember ? 0.3 : 0.22) * CFG.cup;
-      q.x = b.x + Math.cos(a) * r; q.y = (CFG.fireY + (ember ? 0.05 : 0.15)) * CFG.cup; q.z = b.z + Math.sin(a) * r;
-      q.vx = (Math.random() - 0.5) * (ember ? 0.4 : 0.25); q.vz = (Math.random() - 0.5) * (ember ? 0.4 : 0.25);
-      q.t = 0; q.life = c.life * (ember ? 0.5 + Math.random() * 0.6 : 0.6 + Math.random() * 0.6);
-      q.vy = (ember ? 1.5 : 1) * c.rise / c.life * (0.7 + Math.random() * 0.6); q.drag = ember ? 1.2 : 0.8;
-      q.cell = ember ? 16 + Math.floor(Math.random() * 4) : Math.random() < 0.6 ? Math.floor(Math.random() * 8) : 8 + Math.floor(Math.random() * 8);
-      const z = ember ? CFG.emberSize : CFG.sparkSize; q.size = z[0] + Math.random() * (z[1] - z[0]); q.sway = Math.random() * 6;
+    // one particle from a fire, taken from the pool: kind 0 a painted flake, 1 an ember, 2 a brief flash. It is born
+    // inside the flame (round its axis, low to mid height), rises, drifts on its own wobble and fades
+    _emit(b, c, kind, hy) {
+      const sp = sparks, q = sp.pool[sp.n++], a = Math.random() * 6.283, F = CFG.flames[c.tex];
+      const fh = F.h * CFG.mpp * c.scale * hy, r = Math.sqrt(Math.random()) * Math.min(0.2, F.w * CFG.mpp * 0.3) * CFG.cup;
+      q.b = b; b.alive++; q.kind = kind;
+      q.x = b.x + Math.cos(a) * r; q.z = b.z + Math.sin(a) * r; q.y = CFG.fireY * CFG.cup + fh * (kind === 2 ? 0.2 + Math.random() * 0.6 : 0.1 + Math.random() * 0.35);
+      q.vx = (Math.random() - 0.5) * 0.2; q.vz = (Math.random() - 0.5) * 0.2;
+      q.t = 0; q.life = kind === 2 ? 0.12 + Math.random() * 0.2 : c.life * (kind === 1 ? 0.5 + Math.random() * 0.6 : 0.6 + Math.random() * 0.6);
+      q.vy = kind === 2 ? 0.15 + Math.random() * 0.2 : (kind === 1 ? 1.3 : 1) * c.rise / c.life * (0.6 + Math.random() * 0.8); q.drag = kind === 1 ? 1.3 : 0.9;
+      q.wf = 3 + Math.random() * 6; q.wa = 0.05 + Math.random() * 0.15; q.sway = Math.random() * 6.283;
+      q.cell = kind ? 16 + Math.floor(Math.random() * 4) : Math.random() < 0.6 ? Math.floor(Math.random() * 8) : 8 + Math.floor(Math.random() * 8);
+      const z = kind ? CFG.emberSize : CFG.sparkSize; q.size = (z[0] + Math.random() * (z[1] - z[0])) * (kind === 2 ? 1.3 : 1);
     },
     // a new room: drop the fragments still in the air
-    clear() { if (sparks) { sparks.n = 0; sparks.g.setDrawRange(0, 0); } },
+    clear() { if (sparks) { for (let i = 0; i < sparks.n; i++) sparks.pool[i].b = null; sparks.n = 0; sparks.g.setDrawRange(0, 0); } },
     preload() { res(); }
   };
 })();

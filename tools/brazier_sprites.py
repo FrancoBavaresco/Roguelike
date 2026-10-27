@@ -60,6 +60,7 @@ def bleed(img):
 RIM_Y = 262            # the bowl's front rim in the sketch: anything below is the bowl
 DISH = (217, 250, 68, 19)   # the dish as an ellipse: centre x, y and radii (px)
 DISH_TOP = 236         # the dish's back edge: fire shapes start above it, the tint on the dish does not
+FEATHER = 7.0          # px over which a cut-away edge fades out
 PIVOT = (217, 257)     # the flame's foot, on the coals at the centre of the dish
 FLAMES = {'A': 'Capa de pintura 3', 'B': 'Capa de pintura 5', 'C': 'Capa de pintura 6'}
 
@@ -88,6 +89,12 @@ def flame(L, name):
         x, y, w, h, ar = st2[i]
         if ar < 60 or (h <= 14 and abs(x + w / 2 - DISH[0]) > 30): keep[lab2 == i] = False   # specks, and flat strokes off to the side (the rim)
     out = L[name].copy(); out[..., 3] = np.where(keep, out[..., 3], 0)
+    # where paint was cut away (the rim, the dish's tint), the kept shapes would end in a straight or ruled edge: fade
+    # them out over a few px toward the cut instead, so no card edge or mask line shows in the game
+    cut = ((a > 10) & ~keep).astype(np.uint8)
+    if cut.any():
+        dist = cv2.distanceTransform(1 - cut, cv2.DIST_L2, 5); fade = np.clip((dist - 1) / FEATHER, 0, 1)
+        out[..., 3] = (out[..., 3] * fade).astype(np.uint8)
     ys, xs = np.nonzero(out[..., 3] > 8); pad = 3
     x0, x1, y0, y1 = xs.min() - pad, xs.max() + 1 + pad, ys.min() - pad, ys.max() + 1 + pad
     crop = bleed(out[y0:y1, x0:x1])
