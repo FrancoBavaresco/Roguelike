@@ -29,7 +29,12 @@
  },
  "sparks": {
   "cell": 32,
-  "grid": 4,
-  "count": 16
+  "cols": 4,
+  "rows": 5,
+  "flakes": 16,
+  "embers": [
+   16,
+   19
+  ]
  }
 }
