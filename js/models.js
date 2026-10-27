@@ -38,6 +38,15 @@
       subclips: { combo1: ['Attack_Combo', 0.3, 0.68], combo2: ['Attack_Combo', 0.62, 0.98], combo3: ['Attack_Combo', 0.92, 1.4], slam: ['Special_Slam', 0.12, 1.25] },
       anims: { idle: 'Combat_Idle', calm: 'Idle', run: 'Run_Std', dash: 'Dash', hurt: 'Hit', cast: 'Ultimate', slash: 'combo1', chop: 'combo2', thrust: 'combo3', smash: 'slam' } }
   };
+  /* Theron's physique (proportions only; same rig, clips, textures and materials), made by tools/theron_physique.py
+     from theron.glb, which stays untouched: 'A' athletic (wider shoulders, V torso), 'B' robust (more of it).
+     null = the original. height keeps the body the same size: the bigger head makes the model a little taller. */
+  H.THERON_PHYSIQUE = null;
+  H.THERON_VARIANTS = {
+    A: { url: 'public/models/characters/theron_A.glb', height: 1.914 },
+    B: { url: 'public/models/characters/theron_B.glb', height: 1.92 }
+  };
+  if (H.THERON_VARIANTS[H.THERON_PHYSIQUE]) Object.assign(H.PLAYER_MODELS.knight, H.THERON_VARIANTS[H.THERON_PHYSIQUE]);
   H.BOSS_MODELS = {};
   const groups = () => [H.ENEMY_MODELS, H.PLAYER_MODELS, H.BOSS_MODELS];
   M.cfg = type => { for (const g of groups()) if (g[type]) return g[type]; return null; };
