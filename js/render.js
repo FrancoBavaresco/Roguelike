@@ -62,8 +62,9 @@ R.init = function (canvas) {
   window.addEventListener('resize', R.resize);
   R.ready = true;
   R.loadWeaponModels();
-  if (R.slashFx) R.slashFx.preload();
-  if (R.dashFx) R.dashFx.preload();   // Theron's painted slash texture (tiny; ready before the first swing)
+  if (R.slashFx) R.slashFx.preload();   // Theron's painted slash texture (tiny; ready before the first swing)
+  if (R.dashFx) R.dashFx.preload();
+  if (R.brazier) R.brazier.preload();   // the braziers' cup geometry and fire textures
   // marble and rock are shared by every room: prepare them while the menu is up, so no room stalls building them
   setTimeout(() => { try { if (H.settings.look !== 'classic') { R.rockTextures(); R.mixFloorMaterial(); R.pillarMats(); R.marbleTextures('beige'); setTimeout(() => R.marbleTextures('grey'), 300); } } catch (e) { /* built on demand instead */ } }, 1200);
 };
@@ -351,6 +352,7 @@ R.clearChamber = function () {
   while (R.chamber.children.length) { const c = R.chamber.children[0]; R.removeMesh(c); }
   R.doorObjs = []; R.braziers = []; R.props = [];
   for (const l of R.brazierLights || []) l.intensity = 0;
+  if (R.brazier) R.brazier.clear();
 };
 /* UV-scaled box so tiling textures keep their real-world size on every face */
 R.boxUV = function (w, h, d, s) {
@@ -877,16 +879,8 @@ R.buildChamber = function (room, theme) {
   for (const k of [0.3, 0.8]) for (const sx of [-1, 1]) { const x = sx < 0 ? mh.minX + 0.6 : mh.maxX - 0.6; let z = null;
     for (const t of [k, k - 0.12, k + 0.12, k - 0.24, k + 0.24, 0.12, 0.92]) { const zz = mh.minZ + MD * t; if (!H.G.inRoom(x + sx * 1.6, zz, 0, room)) { z = zz; break; } }   // a real wall behind it, not an opening
     if (z != null) brz.push([x, z]); }
-  brz.forEach((p, i) => {
-    const g = new THREE.Group();
-    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.2, 0.4, 6), R.std(0x2a2020, { metalness: 0.5 })); bowl.position.y = 1.1; g.add(bowl);
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 1.0, 5), bowl.material); leg.position.y = 0.5; g.add(leg);
-    const fl = R.glowSprite(theme.rune, 1.6); fl.position.y = 1.5; g.add(fl);
-    g.position.set(p[0], 0, p[1]); g.userData.brazier = true; R.chamber.add(g);
-    let light = null;
-    if (i < 2 && H.settings.quality !== 'low') { light = R.brazierLights[i]; light.color.setHex(theme.rune); light.intensity = H.settings.look === 'classic' ? 1.2 : 2.2; light.distance = H.settings.look === 'classic' ? 10 : 13; light.position.set(p[0], 1.8, p[1]); }
-    R.braziers.push({ x: p[0], z: p[1], fl, light, ph: R.drand() * 7, i0: H.settings.look === 'classic' ? 1.1 : 2.1 });
-  });
+  // each one a cup brazier with a painted fire (js/brazier.js); the first two take the fixed pool's lights
+  brz.forEach((p, i) => R.braziers.push(R.brazier.build(p[0], p[1], theme, room, i)));
   // doors
   for (const d of room.doors) R.buildDoor(d, theme);
   // prop
@@ -1199,7 +1193,7 @@ R.buildDecor = function (room, theme, wallTops, doorXs) {
 };
 R.updateChamber = function (dt) {
   const t = R.t;
-  for (const b of R.braziers || []) { const f = 0.8 + Math.sin(t * 9 + b.ph) * 0.1 + Math.sin(t * 23 + b.ph) * 0.06; b.fl.scale.set(1.6 * f, 1.9 * f, 1); if (b.light) b.light.intensity = (b.i0 || 1.1) * f; if (Math.random() < dt * 8) R.emit(b.x + (Math.random() - .5) * .3, 1.4, b.z + (Math.random() - .5) * .3, 0, 1.2, 0, 0.7, 0.22, 0.02, R.theme.rune, 0.8, -0.5, 1); }
+  if (R.brazier) R.brazier.tick(dt, t);   // the braziers' fire, light and fragments (js/brazier.js)
   for (const d of R.doorObjs || []) {
     const target = d.d.open ? 1 : 0; d.open = target > d.open ? Math.min(1, d.open + dt * 0.9) : Math.max(0, d.open - dt * 1.5);
     d.portalMat.uniforms.uTime.value = t; d.portalMat.uniforms.uOpen.value = d.open;

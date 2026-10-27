@@ -1,0 +1,35 @@
+{
+ "source": "braseros_fuego_verde.kra",
+ "px": 512,
+ "flames": {
+  "A": {
+   "w": 50,
+   "h": 62,
+   "pivot": [
+    23,
+    68
+   ]
+  },
+  "B": {
+   "w": 77,
+   "h": 79,
+   "pivot": [
+    32,
+    81
+   ]
+  },
+  "C": {
+   "w": 111,
+   "h": 128,
+   "pivot": [
+    59,
+    126
+   ]
+  }
+ },
+ "sparks": {
+  "cell": 32,
+  "grid": 4,
+  "count": 16
+ }
+}
