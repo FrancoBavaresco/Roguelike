@@ -41,7 +41,7 @@
   /* Theron's physique (proportions only; same rig, clips, textures and materials), made by tools/theron_physique.py
      from theron.glb, which stays untouched: 'A' athletic (wider shoulders, V torso), 'B' robust (more of it).
      null = the original. height keeps the body the same size: the bigger head makes the model a little taller. */
-  H.THERON_PHYSIQUE = null;
+  H.THERON_PHYSIQUE = 'B';
   H.THERON_VARIANTS = {
     A: { url: 'public/models/characters/theron_A.glb', height: 1.914 },
     B: { url: 'public/models/characters/theron_B.glb', height: 1.92 }
