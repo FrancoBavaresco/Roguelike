@@ -1,0 +1,384 @@
+{
+ "source": "estocada_azul.kra",
+ "px": 512,
+ "atlas": 1024,
+ "frames": [
+  {
+   "layer": "Capa de pintura 1",
+   "file": "layer24",
+   "atlas": [
+    569,
+    2,
+    204,
+    201
+   ],
+   "rect": [
+    39,
+    129,
+    204,
+    201
+   ]
+  },
+  {
+   "layer": "Capa de pintura 2",
+   "file": "layer23",
+   "atlas": [
+    710,
+    762,
+    182,
+    99
+   ],
+   "rect": [
+    109,
+    188,
+    182,
+    99
+   ]
+  },
+  {
+   "layer": "Capa de pintura 3",
+   "file": "layer22",
+   "atlas": [
+    896,
+    762,
+    115,
+    83
+   ],
+   "rect": [
+    162,
+    198,
+    115,
+    83
+   ]
+  },
+  {
+   "layer": "Capa de pintura 8",
+   "file": "layer21",
+   "atlas": [
+    556,
+    762,
+    150,
+    114
+   ],
+   "rect": [
+    145,
+    176,
+    150,
+    114
+   ]
+  },
+  {
+   "layer": "Capa de pintura 4",
+   "file": "layer20",
+   "atlas": [
+    294,
+    762,
+    50,
+    125
+   ],
+   "rect": [
+    220,
+    160,
+    50,
+    125
+   ]
+  },
+  {
+   "layer": "Capa de pintura 4",
+   "file": "layer19",
+   "atlas": [
+    707,
+    617,
+    109,
+    138
+   ],
+   "rect": [
+    187,
+    160,
+    109,
+    138
+   ]
+  },
+  {
+   "layer": "Capa de pintura 4",
+   "file": "layer18",
+   "atlas": [
+    179,
+    617,
+    105,
+    139
+   ],
+   "rect": [
+    186,
+    160,
+    105,
+    139
+   ]
+  },
+  {
+   "layer": "Capa de pintura 5",
+   "file": "layer17",
+   "atlas": [
+    194,
+    457,
+    276,
+    153
+   ],
+   "rect": [
+    58,
+    164,
+    276,
+    153
+   ]
+  },
+  {
+   "layer": "Capa de pintura 9",
+   "file": "layer16",
+   "atlas": [
+    2,
+    617,
+    173,
+    141
+   ],
+   "rect": [
+    44,
+    157,
+    173,
+    141
+   ]
+  },
+  {
+   "layer": "Capa de pintura 6",
+   "file": "layer15",
+   "atlas": [
+    725,
+    457,
+    250,
+    152
+   ],
+   "rect": [
+    81,
+    151,
+    250,
+    152
+   ]
+  },
+  {
+   "layer": "Capa de pintura 7",
+   "file": "layer14",
+   "atlas": [
+    348,
+    762,
+    50,
+    125
+   ],
+   "rect": [
+    308,
+    155,
+    50,
+    125
+   ]
+  },
+  {
+   "layer": "Capa de pintura 4",
+   "file": "layer13",
+   "atlas": [
+    288,
+    617,
+    105,
+    139
+   ],
+   "rect": [
+    268,
+    152,
+    105,
+    139
+   ]
+  },
+  {
+   "layer": "Capa de pintura 4",
+   "file": "layer12",
+   "atlas": [
+    820,
+    617,
+    109,
+    138
+   ],
+   "rect": [
+    268,
+    151,
+    109,
+    138
+   ]
+  },
+  {
+   "layer": "Capa de pintura 10",
+   "file": "layer11",
+   "atlas": [
+    2,
+    762,
+    175,
+    138
+   ],
+   "rect": [
+    128,
+    168,
+    175,
+    138
+   ]
+  },
+  {
+   "layer": "Capa de pintura 11",
+   "file": "layer10",
+   "atlas": [
+    402,
+    762,
+    150,
+    124
+   ],
+   "rect": [
+    208,
+    170,
+    150,
+    124
+   ]
+  },
+  {
+   "layer": "Capa de pintura 4",
+   "file": "layer9",
+   "atlas": [
+    181,
+    762,
+    109,
+    138
+   ],
+   "rect": [
+    307,
+    155,
+    109,
+    138
+   ]
+  },
+  {
+   "layer": "Capa de pintura 4",
+   "file": "layer8",
+   "atlas": [
+    397,
+    617,
+    105,
+    139
+   ],
+   "rect": [
+    305,
+    154,
+    105,
+    139
+   ]
+  },
+  {
+   "layer": "Capa de pintura 4",
+   "file": "layer7",
+   "atlas": [
+    506,
+    617,
+    197,
+    139
+   ],
+   "rect": [
+    294,
+    159,
+    197,
+    139
+   ]
+  },
+  {
+   "layer": "Capa de pintura 4",
+   "file": "layer6",
+   "atlas": [
+    2,
+    457,
+    188,
+    156
+   ],
+   "rect": [
+    309,
+    160,
+    188,
+    156
+   ]
+  },
+  {
+   "layer": "Capa de pintura 12",
+   "file": "layer5",
+   "atlas": [
+    777,
+    2,
+    209,
+    169
+   ],
+   "rect": [
+    300,
+    142,
+    209,
+    169
+   ]
+  },
+  {
+   "layer": "Capa de pintura 13",
+   "file": "layer4",
+   "atlas": [
+    474,
+    457,
+    247,
+    153
+   ],
+   "rect": [
+    258,
+    152,
+    247,
+    153
+   ]
+  },
+  {
+   "layer": "Capa de pintura 14",
+   "file": "layer3",
+   "atlas": [
+    302,
+    2,
+    263,
+    250
+   ],
+   "rect": [
+    130,
+    88,
+    263,
+    250
+   ]
+  },
+  {
+   "layer": "Capa de pintura 15",
+   "file": "layer2",
+   "atlas": [
+    2,
+    2,
+    296,
+    451
+   ],
+   "rect": [
+    216,
+    0,
+    296,
+    451
+   ]
+  }
+ ],
+ "origin": [
+  139,
+  237
+ ],
+ "end": [
+  458,
+  235
+ ],
+ "axisY": 245.5
+}

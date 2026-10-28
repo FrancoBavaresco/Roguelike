@@ -180,7 +180,8 @@
             // the blade's cutting phase in this swing: start with it, run with it, peak halfway
             const A = p.anim || {}, kind = m.swing === 'slash' ? (m.swingBig ? 'big' : A.hitN === m._swingN ? 'slash' : 'quick') : m.swing;
             const c = CFG.kinds[kind], rate = R.swingRate ? R.swingRate(m) : 3.6, done = 1 - m.swingT;
-            if (done >= c.phase[0]) {
+            if (kind === 'thrust' && R.thrustFx && R.thrustFx.covers(m, p)) { /* the combo's thrust has its own painting (js/thrustfx.js) */ }
+            else if (done >= c.phase[0]) {
               const cut = (c.phase[1] - c.phase[0]) / rate, left = Math.max(0, (c.phase[1] - done) / rate);
               const entry = Math.max(0.05, Math.min(0.2, Math.min(cut, left) * c.entryK));
               R.slashFx.fire(m, key, kind, entry, Math.max(0.03, ((c.phase[0] + c.phase[1]) / 2 - done) / rate));

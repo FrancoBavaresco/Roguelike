@@ -31,7 +31,7 @@ V.sync = function (dt) {
   if (!G.active) return;
   for (const p of G.players) {
     if (!p.model) continue;
-    if (p.dead) { R.setModelVisible(p.model, false); if (R.trail) R.trail.clear(p.model); if (R.slashFx) R.slashFx.clear(p.model); if (R.dashFx) R.dashFx.clear(p.model); continue; }
+    if (p.dead) { R.setModelVisible(p.model, false); if (R.trail) R.trail.clear(p.model); if (R.slashFx) R.slashFx.clear(p.model); if (R.dashFx) R.dashFx.clear(p.model); if (R.thrustFx) R.thrustFx.clear(p.model); continue; }
     R.animateRogue(p.model, p, dt);
   }
   for (const e of G.enemies) {
