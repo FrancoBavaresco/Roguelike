@@ -1,0 +1,2 @@
+Dark Rock 02 — Poly Haven (https://polyhaven.com/a/dark_rock_02), CC0 1.0 (public domain).
+Converted for Hexwright: 4K -> 1024 px JPG; normal (OpenGL) and roughness from EXR to 8-bit.

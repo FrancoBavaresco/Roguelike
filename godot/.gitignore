@@ -1,0 +1,4 @@
+# Godot cache and imports (regenerated when the project opens)
+.godot/
+*.translation
+export_presets.cfg
