@@ -39,6 +39,11 @@ var arm_ik: ArmIK
 var _grip_rest := Transform3D()       # hand_R (the grip socket) in RightHand's frame
 var _sword_pose := Transform3D()      # model space: the grip, +Y along the blade (smoothed between swings)
 var _anim_t := 0.0
+var posture: Posture
+var _carry := 0.0                     # 0 = sword on the shoulder (standing), 1 = carried low at the side (moving)
+var _sway := Vector2.ZERO             # the carried blade's lag (yaw out, pitch up), a damped spring
+var _sway_v := Vector2.ZERO
+var _prev_vel := Vector3.ZERO
 
 func _ready() -> void:
 	motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
@@ -60,9 +65,11 @@ func _build_model() -> void:
 	for loop_name in ["Combat_Idle", "Idle", "Run"]:
 		if anim.has_animation(loop_name):
 			anim.get_animation(loop_name).loop_mode = Animation.LOOP_LINEAR
-	anim.play("Combat_Idle")
-	# the right arm reaches for the sword's path (IK, after the clip), and the sword sits in the grip bone
+	anim.play("Idle")
+	# the resting posture (torso, neck, shoulders) over the clip, then the right arm reaches for the sword's path (IK, after the clip), and the sword sits in the grip bone
 	_grip_rest = skeleton.get_bone_rest(skeleton.find_bone("hand_R"))
+	posture = Posture.new()
+	skeleton.add_child(posture)           # modifiers run in child order: the posture first, the arm IK after it
 	arm_ik = ArmIK.new()
 	skeleton.add_child(arm_ik)
 	_sword_pose = _path_pose(0.0)
@@ -92,10 +99,10 @@ func _build_model() -> void:
 	fit.scale = Vector3(0.68, 0.68, 0.68)
 	fit.position.y = 0.78 * 0.68 - 0.08
 	sword.scale = Vector3(2.1, 1.0, 2.0)
-	# hit flash: an emission on the body materials
+	# hit flash: an emission on the body materials (not the sword's)
 	for mi in model.find_children("*", "MeshInstance3D", true, false):
 		var m := mi as MeshInstance3D
-		if m.name.contains("Outline"):
+		if m.name.contains("Outline") or grip.is_ancestor_of(m):
 			continue
 		for s in m.mesh.get_surface_count():
 			var mat := m.mesh.surface_get_material(s)
@@ -227,8 +234,8 @@ func _update_anim(dt: float) -> void:
 		anim.speed_scale = clampf(speed / 6.0, 0.6, 1.4)
 	else:
 		anim.speed_scale = 1.0
-		if anim.current_animation != "Combat_Idle":
-			anim.play("Combat_Idle", 0.15)
+		if anim.current_animation != "Idle":
+			anim.play("Idle", 0.25)
 
 # ---------------------------------------------------------------- the sword's paths
 # Model space: the .glb faces +Z, so forward = +Z, up = +Y, Theron's right = -X. Every pose is the grip's place and
@@ -272,15 +279,53 @@ func _path_pose(t: float) -> Transform3D:
 			return _frame(hand, _v(-0.04, -0.05, 1.0), Vector3.UP)
 	if _dash_t > 0.0:
 		return _frame(_v(0.3, 1.0, -0.1), _v(0.1, -0.35, -1.0), Vector3.UP)      # trailing behind
+	return _rest_pose().interpolate_with(_carry_pose(), _ease(_carry))
+
+## Standing: the blade lies on top of the right shoulder (about right 0.22, up 1.56, just behind the joint at
+## right 0.26 / up 1.47 in the Idle clip), slanting up and back about 27°; the hand holds the grip a hand's length
+## in front of the shoulder, elbow loose. It rises and falls a touch with the breath.
+const REST_ON := Vector3(-0.22, 1.56, -0.04)       # the point of the shoulder the blade rests on (model space)
+const REST_DIR := Vector3(-0.24, 0.42, -0.87)      # the blade: up, back and out over the shoulder (a diagonal from the front too)
+const REST_GRIP := 0.32                            # m from the grip to where the blade meets the shoulder
+func _rest_pose() -> Transform3D:
+	var breath := sin(_anim_t * 1.7) * 0.008
+	var d := REST_DIR.normalized()
+	return _frame(REST_ON - d * REST_GRIP + Vector3(0, breath, 0), d, _v(-0.2, 1.0, 0.0))
+
+## Moving: the sword hangs at the right side, a little behind the hip, the point back and slightly out, never down
+## to the floor. The hand swings with the stride and the blade lags behind the body's turns and pushes (_sway).
+func _carry_pose() -> Transform3D:
 	var speed := Vector2(velocity.x, velocity.z).length()
-	var run := clampf(speed / T.MOVE_SPEED, 0.0, 1.0)
-	var bob := sin(_anim_t * 11.0) * 0.03 * run
-	var guard := _frame(_v(0.26, 1.02, 0.22), _v(-0.12, 0.6, 0.8), _v(1, 0, 0))   # on guard: point up and ahead
-	var lowered := _frame(_v(0.28, 0.98 + bob, 0.15), _v(0.0, 0.18, 1.0), Vector3.UP)
-	return guard.interpolate_with(lowered, run)
+	var amp := clampf(speed / T.MOVE_SPEED, 0.0, 1.0)
+	var ph := _stride_phase()
+	var hand := _v(0.27, 0.9 + absf(cos(ph)) * 0.015 * amp, -0.06 + sin(ph) * 0.07 * amp)
+	var pitch := _sway.y + sin(ph * 2.0) * 0.035 * amp
+	var d := _v(0.24 + _sway.x, -0.24 + pitch, -0.92).normalized()
+	return _frame(hand, d, _v(1, 0, 0))
+
+## Where the stride is (radians): from the run clip when it plays, so the arm swings with the steps.
+func _stride_phase() -> float:
+	if anim.current_animation == "Run":
+		var a := anim.get_animation("Run")
+		return anim.current_animation_position / maxf(a.length, 0.01) * TAU
+	return _anim_t * 9.0
 
 func _update_sword(dt: float) -> void:
 	_anim_t += dt
+	# standing ↔ moving: lower the sword quickly when he sets off, lift it back to the shoulder a little slower
+	var speed := Vector2(velocity.x, velocity.z).length()
+	var moving := 1.0 if speed > 0.8 else 0.0
+	_carry = move_toward(_carry, moving, dt / (0.18 if moving > _carry else 0.3))
+	# the carried blade lags: a damped spring pushed by the body's acceleration (in the body's own frame)
+	var acc := (velocity - _prev_vel) / maxf(dt, 1e-4)
+	_prev_vel = velocity
+	var local := global_basis.inverse() * acc               # body frame: forward is -Z, right is +X
+	var push := Vector2(clampf(local.x * 0.006, -0.25, 0.25), clampf(-local.z * 0.008, -0.3, 0.3))
+	_sway_v += ((push - _sway) * 90.0 - _sway_v * 12.0) * dt
+	_sway += _sway_v * dt
+	# the resting posture only while standing (it gives way to running, swings and dashes)
+	var rest := (1.0 - _ease(_carry)) * (0.0 if (_attack_t >= 0.0 or _dash_t > 0.0) else 1.0)
+	posture.weight = lerpf(posture.weight, rest, 1.0 - exp(-dt * 10.0))
 	var want := _path_pose(_anim_t)
 	if _attack_t >= 0.0 or _dash_t > 0.0:
 		_sword_pose = _sword_pose.interpolate_with(want, 1.0 - exp(-dt * 45.0))
