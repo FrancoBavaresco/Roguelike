@@ -1,11 +1,13 @@
 extends Node3D
 ## Hexwright (Godot) — first playable slice: one chamber, Theron with his sword combo and dash, waves of Husks.
-## Builds everything in code so the scene file stays tiny: input map, light and atmosphere, the room, the camera,
-## the HUD, and the combat effects (hit areas, painted slashes, damage numbers, camera shake).
+## Builds the world in code for now: light and atmosphere, the room, the camera and the combat effects (hit areas,
+## painted slashes, damage numbers, camera shake). The controls are in Project Settings > Input Map and the HUD is
+## its own scene (scenes/ui/hud.tscn); both are being split out of this file one system at a time.
 
 const T := preload("res://scripts/tuning.gd")
 const PlayerScript := preload("res://scripts/player.gd")
 const HuskScript := preload("res://scripts/husk.gd")
+const HUD_SCENE := preload("res://scenes/ui/hud.tscn")
 const TEX_FLOOR := preload("res://assets/textures/floor/color_2k.jpg")
 const TEX_FLOOR_N := preload("res://assets/textures/floor/nor_gl_2k.jpg")
 const TEX_WALL := preload("res://assets/textures/wall/diff_1k.jpg")
@@ -24,18 +26,13 @@ var enemies: Array[Husk] = []
 var wave := 0
 var _cam_target := Vector3.ZERO
 var _shake := 0.0
-var _hud_hp: ProgressBar
-var _hud_hp_label: Label
-var _hud_wave: Label
-var _hud_dash: Label
-var _hud_msg: Label
+var hud: Hud
 var _between_waves := 0.0
 var _fx_root: Node3D
 var mouse_aim := true                  # false: something else aims (tests, later a gamepad)
 
 func _ready() -> void:
 	randomize()
-	_setup_input()
 	_build_atmosphere()
 	_build_room()
 	_fx_root = Node3D.new(); add_child(_fx_root)
@@ -43,27 +40,14 @@ func _ready() -> void:
 	player.world = self
 	add_child(player)
 	player.position = Vector3(0, 0, 4)
-	player.hp_changed.connect(_on_hp)
-	player.died.connect(_on_player_died)
 	_build_camera()
-	_build_hud()
+	hud = HUD_SCENE.instantiate()
+	add_child(hud)
+	hud.set_hp(player.hp, T.PLAYER_HP)
+	hud.set_dash(player.dash_charges, T.DASH_CHARGES)
+	player.hp_changed.connect(hud.set_hp)
+	player.died.connect(_on_player_died)
 	_between_waves = 1.0
-
-# ---------------------------------------------------------------- input
-func _setup_input() -> void:
-	var keys := { "move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN], "move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT], "dash": [KEY_SPACE], "restart": [KEY_R] }
-	for action in keys:
-		if not InputMap.has_action(action):
-			InputMap.add_action(action)
-		for k in keys[action]:
-			var ev := InputEventKey.new(); ev.physical_keycode = k
-			InputMap.action_add_event(action, ev)
-	if not InputMap.has_action("attack"):
-		InputMap.add_action("attack")
-		var mb := InputEventMouseButton.new(); mb.button_index = MOUSE_BUTTON_LEFT
-		InputMap.action_add_event("attack", mb)
-		var jk := InputEventKey.new(); jk.physical_keycode = KEY_J
-		InputMap.action_add_event("attack", jk)
 
 # ---------------------------------------------------------------- world
 func _build_atmosphere() -> void:
@@ -184,7 +168,7 @@ func _process(dt: float) -> void:
 	_update_waves(dt)
 	if Input.is_action_just_pressed("restart"):
 		get_tree().reload_current_scene()
-	_hud_dash.text = "Impulso  " + "◆ ".repeat(player.dash_charges) + "◇ ".repeat(T.DASH_CHARGES - player.dash_charges)
+	hud.set_dash(player.dash_charges, T.DASH_CHARGES)
 
 func _update_aim() -> void:
 	if not mouse_aim:
@@ -211,14 +195,14 @@ func _update_waves(dt: float) -> void:
 		if _between_waves <= 0.0:
 			_between_waves = 1.6
 			if wave > 0:
-				_message("Oleada %d superada" % wave, 1.4)
+				hud.show_message("Oleada %d superada" % wave, 1.4)
 		_between_waves -= dt
 		if _between_waves <= 0.0:
 			_spawn_wave()
 
 func _spawn_wave() -> void:
 	wave += 1
-	_hud_wave.text = "Oleada %d" % wave
+	hud.set_wave(wave)
 	var n := 2 + wave * 2
 	for i in n:
 		var e: Husk = HuskScript.new()
@@ -344,46 +328,6 @@ func damage_number(pos: Vector3, dmg: int) -> void:
 	tw.parallel().tween_property(l, "modulate:a", 0.0, 0.3).set_delay(0.35)
 	tw.tween_callback(l.queue_free)
 
-# ---------------------------------------------------------------- HUD
-func _build_hud() -> void:
-	var cl := CanvasLayer.new(); add_child(cl)
-	var box := VBoxContainer.new(); box.position = Vector2(32, 28); cl.add_child(box)
-	_hud_hp_label = Label.new(); _hud_hp_label.text = "Theron  %d / %d" % [T.PLAYER_HP, T.PLAYER_HP]; box.add_child(_hud_hp_label)
-	_hud_hp = ProgressBar.new(); _hud_hp.custom_minimum_size = Vector2(360, 22); _hud_hp.max_value = T.PLAYER_HP; _hud_hp.value = T.PLAYER_HP; _hud_hp.show_percentage = false
-	var fill := StyleBoxFlat.new(); fill.bg_color = Color("b8323a"); _hud_hp.add_theme_stylebox_override("fill", fill)
-	var bg := StyleBoxFlat.new(); bg.bg_color = Color(0.08, 0.06, 0.07, 0.85); _hud_hp.add_theme_stylebox_override("background", bg)
-	box.add_child(_hud_hp)
-	_hud_dash = Label.new(); box.add_child(_hud_dash)
-	_hud_wave = Label.new(); _hud_wave.text = ""; box.add_child(_hud_wave)
-	for l in [_hud_hp_label, _hud_dash, _hud_wave]:
-		l.add_theme_font_size_override("font_size", 22)
-		l.add_theme_color_override("font_outline_color", Color.BLACK); l.add_theme_constant_override("outline_size", 6)
-	var help := Label.new()
-	help.text = "WASD mover · Clic izquierdo combo (3 golpes) · Espacio impulso · R reiniciar"
-	help.add_theme_font_size_override("font_size", 18); help.modulate = Color(1, 1, 1, 0.7)
-	help.anchor_top = 1.0; help.anchor_bottom = 1.0; help.position = Vector2(32, -48)
-	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT, Control.PRESET_MODE_KEEP_SIZE, 32)
-	cl.add_child(help)
-	_hud_msg = Label.new()
-	_hud_msg.add_theme_font_size_override("font_size", 48)
-	_hud_msg.add_theme_color_override("font_outline_color", Color.BLACK); _hud_msg.add_theme_constant_override("outline_size", 10)
-	_hud_msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hud_msg.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_KEEP_SIZE, 120)
-	_hud_msg.modulate.a = 0.0
-	cl.add_child(_hud_msg)
-
-func _message(text: String, hold: float) -> void:
-	_hud_msg.text = text
-	_hud_msg.reset_size()
-	_hud_msg.position.x = (get_viewport().get_visible_rect().size.x - _hud_msg.size.x) / 2.0
-	var tw := create_tween()
-	tw.tween_property(_hud_msg, "modulate:a", 1.0, 0.15)
-	if hold > 0.0:
-		tw.tween_property(_hud_msg, "modulate:a", 0.0, 0.4).set_delay(hold)
-
-func _on_hp(hp: int, max_hp: int) -> void:
-	_hud_hp.value = hp
-	_hud_hp_label.text = "Theron  %d / %d" % [hp, max_hp]
-
+# ---------------------------------------------------------------- game over
 func _on_player_died() -> void:
-	_message("Theron cayó en la oleada %d — R para reintentar" % wave, 0.0)
+	hud.show_message("Theron cayó en la oleada %d — R para reintentar" % wave, 0.0)
