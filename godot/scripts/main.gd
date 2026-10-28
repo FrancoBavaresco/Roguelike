@@ -14,8 +14,8 @@ const TEX_WALL := preload("res://assets/textures/wall/diff_1k.jpg")
 const TEX_WALL_N := preload("res://assets/textures/wall/nor_gl_1k.jpg")
 const TEX_PILLAR := preload("res://assets/textures/pillar/face03_diff.jpg")
 const TEX_PILLAR_N := preload("res://assets/textures/pillar/face03_nor.jpg")
-const TEX_SLASH := preload("res://assets/textures/fx/theron_slash_1.png")
-const TEX_THRUST := preload("res://assets/textures/fx/thrust_atlas.png")
+const TEX_SLASH := preload("res://assets/textures/fx/slash/theron_slash_1.png")
+const TEX_THRUST := preload("res://assets/textures/fx/estocada/Estocada_Azul_14.png")   # layer "Capa 10" of estocada_azul.kra
 
 const ROOM := Vector2(26.0, 18.0)       # inner size (m), x by z
 const WALL_H := 3.2
@@ -293,7 +293,7 @@ func _slash_fx(origin: Vector3, dir: Vector3, hd: Dictionary) -> void:
 func _thrust_fx(origin: Vector3, dir: Vector3) -> void:
 	var s := Sprite3D.new()
 	s.texture = TEX_THRUST
-	s.region_enabled = true; s.region_rect = Rect2(2, 762, 175, 138)        # the cyan blast
+	s.region_enabled = true; s.region_rect = Rect2(128, 168, 175, 138)      # the cyan blast, where it sits in the painting
 	s.axis = Vector3.AXIS_Y
 	s.shaded = false; s.double_sided = true
 	s.pixel_size = 0.016

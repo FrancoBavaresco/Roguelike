@@ -1,0 +1,109 @@
+[gd_scene format=3 uid="uid://cy6vhp321as2a"]
+
+[ext_resource type="Texture2D" uid="uid://d4am84hxkg17v" path="res://assets/textures/fx/estocada/Estocada_Azul.png" id="1_5qfss"]
+[ext_resource type="Texture2D" uid="uid://5s4it5rhab8d" path="res://assets/textures/fx/estocada/Estocada_Azul_01.png" id="2_de85l"]
+[ext_resource type="Texture2D" uid="uid://b4acm2b6xsbq1" path="res://assets/textures/fx/estocada/Estocada_Azul_02.png" id="3_kmu5m"]
+[ext_resource type="Texture2D" uid="uid://cb2e7q303nv5j" path="res://assets/textures/fx/estocada/Estocada_Azul_04.png" id="4_4bvlj"]
+[ext_resource type="Texture2D" uid="uid://d0wpqnycayxhf" path="res://assets/textures/fx/estocada/Estocada_Azul_05.png" id="5_8ypo5"]
+[ext_resource type="Texture2D" uid="uid://bwh1jae0mjpmq" path="res://assets/textures/fx/estocada/Estocada_Azul_06.png" id="6_y7vdm"]
+[ext_resource type="Texture2D" uid="uid://bk1prsi6tdtt1" path="res://assets/textures/fx/estocada/Estocada_Azul_07.png" id="7_s2ib0"]
+[ext_resource type="Texture2D" uid="uid://cejgyx3escwhh" path="res://assets/textures/fx/estocada/Estocada_Azul_08.png" id="8_xuyfu"]
+[ext_resource type="Texture2D" uid="uid://cgjiniv23lext" path="res://assets/textures/fx/estocada/Estocada_Azul_09.png" id="9_d6y1a"]
+[ext_resource type="Texture2D" uid="uid://dbso4q5w8hb53" path="res://assets/textures/fx/estocada/Estocada_Azul_10.png" id="10_np144"]
+[ext_resource type="Texture2D" uid="uid://cc1uy5l6rbtdj" path="res://assets/textures/fx/estocada/Estocada_Azul_11.png" id="11_476mu"]
+[ext_resource type="Texture2D" uid="uid://bmn2oaoko2nep" path="res://assets/textures/fx/estocada/Estocada_Azul_12.png" id="12_gll2g"]
+[ext_resource type="Texture2D" uid="uid://bpu3cv2areg6w" path="res://assets/textures/fx/estocada/Estocada_Azul_13.png" id="13_w0lu6"]
+[ext_resource type="Texture2D" uid="uid://cny5ubifyqo1s" path="res://assets/textures/fx/estocada/Estocada_Azul_14.png" id="14_hinqv"]
+[ext_resource type="Texture2D" uid="uid://cofn4obtid0vn" path="res://assets/textures/fx/estocada/Estocada_Azul_15.png" id="15_4bxbo"]
+[ext_resource type="Texture2D" uid="uid://x0yjixl2bo8t" path="res://assets/textures/fx/estocada/Estocada_Azul_16.png" id="16_25qoc"]
+[ext_resource type="Texture2D" uid="uid://ctyf204yyiu82" path="res://assets/textures/fx/estocada/Estocada_Azul_17.png" id="17_mv0dr"]
+[ext_resource type="Texture2D" uid="uid://bij47g6q88gvw" path="res://assets/textures/fx/estocada/Estocada_Azul_18.png" id="18_yk2tl"]
+[ext_resource type="Texture2D" uid="uid://cn3rud0mynjle" path="res://assets/textures/fx/estocada/Estocada_Azul_19.png" id="19_l10qd"]
+[ext_resource type="Texture2D" uid="uid://bfuccv1ky44hg" path="res://assets/textures/fx/estocada/Estocada_Azul_20.png" id="20_yrokn"]
+[ext_resource type="Texture2D" uid="uid://7ft7to7t7xfq" path="res://assets/textures/fx/estocada/Estocada_Azul_21.png" id="21_rn5dp"]
+[ext_resource type="Texture2D" uid="uid://cqwd071jevvgx" path="res://assets/textures/fx/estocada/Estocada_Azul_22.png" id="22_b50jo"]
+[ext_resource type="Texture2D" uid="uid://rqgbti2tvvab" path="res://assets/textures/fx/estocada/Estocada_Azul_23.png" id="23_yvyxr"]
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_x5gwo"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_5qfss")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_de85l")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_kmu5m")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_4bvlj")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_8ypo5")
+}, {
+"duration": 1.0,
+"texture": ExtResource("6_y7vdm")
+}, {
+"duration": 1.0,
+"texture": ExtResource("7_s2ib0")
+}, {
+"duration": 1.0,
+"texture": ExtResource("8_xuyfu")
+}, {
+"duration": 1.0,
+"texture": ExtResource("9_d6y1a")
+}, {
+"duration": 1.0,
+"texture": ExtResource("10_np144")
+}, {
+"duration": 1.0,
+"texture": ExtResource("11_476mu")
+}, {
+"duration": 1.0,
+"texture": ExtResource("12_gll2g")
+}, {
+"duration": 1.0,
+"texture": ExtResource("13_w0lu6")
+}, {
+"duration": 1.0,
+"texture": ExtResource("14_hinqv")
+}, {
+"duration": 1.0,
+"texture": ExtResource("15_4bxbo")
+}, {
+"duration": 1.0,
+"texture": ExtResource("16_25qoc")
+}, {
+"duration": 1.0,
+"texture": ExtResource("17_mv0dr")
+}, {
+"duration": 1.0,
+"texture": ExtResource("18_yk2tl")
+}, {
+"duration": 1.0,
+"texture": ExtResource("19_l10qd")
+}, {
+"duration": 1.0,
+"texture": ExtResource("20_yrokn")
+}, {
+"duration": 1.0,
+"texture": ExtResource("21_rn5dp")
+}, {
+"duration": 1.0,
+"texture": ExtResource("22_b50jo")
+}, {
+"duration": 1.0,
+"texture": ExtResource("23_yvyxr")
+}],
+"loop": 1,
+"name": &"default",
+"speed": 5.0
+}]
+
+[node name="EstocadaFX" type="AnimatedSprite3D" unique_id=1763766294]
+sprite_frames = SubResource("SpriteFrames_x5gwo")
+frame = 4
+frame_progress = 0.8004441
+
+[node name="Sprite3D" type="Sprite3D" parent="." unique_id=1507229494]

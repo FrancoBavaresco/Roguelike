@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://b5k5ki7lfvq6b"]
+
+[ext_resource type="Texture2D" uid="uid://d4am84hxkg17v" path="res://assets/textures/fx/estocada/Estocada_Azul.png" id="1_xbikf"]
+
+[node name="EstocadaFX" type="Node3D" unique_id=939196482]
+
+[node name="Sprite3D" type="Sprite3D" parent="." unique_id=1507229494]
+texture = ExtResource("1_xbikf")
